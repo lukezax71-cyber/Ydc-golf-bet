@@ -460,6 +460,46 @@ def run():
             shot(p5, '53-summary-after-edit.png')
             ctx5.close()
 
+            # ================= 시나리오 6: 니어 + 롱기 동시 지정 =================
+            print('\n[6] 니어 + 롱기 같은 홀')
+            ctx6 = browser.new_context(viewport=bu.MOBILE, device_scale_factor=2, locale='ko-KR')
+            p6 = ctx6.new_page()
+            errs6 = []
+            p6.on('pageerror', lambda e: errs6.append(str(e)))
+            p6.goto(url, wait_until='load')
+            p6.wait_for_timeout(200)
+            start_round(p6, 'ydc', ['가', '나', '다'], base=1000, holes=9,
+                        sides={'nearest': [2], 'longest': [2]}, title='사이드 둘')
+            # 1홀은 사이드 없음
+            ok('1홀엔 사이드 칩 없음', p6.locator('.side-chips').count() == 0)
+            fill_scores(p6, {'가': 1, '나': 1, '다': 1})
+            p6.click('[data-act="play:finish"]')
+            p6.wait_for_timeout(250)
+            p6.click('[data-act="result:next"]')
+            p6.wait_for_timeout(200)
+            ok('2홀엔 선수마다 사이드 칩 2줄', p6.locator('.player').first.locator('.side-chips').count() == 2,
+               p6.locator('.player').first.locator('.side-chips').count())
+            fill_scores(p6, {'가': 0, '나': 1, '다': 2})
+            cards = p6.locator('.player')
+            for i in range(cards.count()):
+                nm = cards.nth(i).locator('.name').inner_text().strip()
+                if nm == '가':
+                    cards.nth(i).locator('.side-chips').nth(0).locator('[data-val="win"]').click()
+                if nm == '다':
+                    cards.nth(i).locator('.side-chips').nth(1).locator('[data-val="win"]').click()
+            p6.wait_for_timeout(120)
+            shot(p6, '61-play-two-sides.png', full=True)
+            p6.click('[data-act="play:finish"]')
+            p6.wait_for_timeout(350)
+            v6 = recompute_in_page(p6, storage_round(p6))
+            h2 = None
+            p6_body = p6.inner_text('#root')
+            ok('니어·롱기 둘 다 표시', '니어' in p6_body and '롱기' in p6_body, p6_body[:300])
+            ok('사이드 둘 다 정산(합 0)', sum(v6['finalNet']) == 0, v6['finalNet'])
+            ok('사이드 콘솔 오류 없음', not errs6, errs6)
+            shot(p6, '62-result-two-sides.png')
+            ctx6.close()
+
             browser.close()
     finally:
         httpd.shutdown()

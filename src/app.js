@@ -419,8 +419,11 @@ var App = (function () {
       var sideChips = activeSides.map(function (type) {
         var label = type === 'nearest' ? '니어' : '롱기';
         var cur = (d.sides[type] && d.sides[type][uid]) || 'none';
-        return '<button data-act="play:side" data-type="' + type + '" data-uid="' + esc(uid) + '" data-val="win" class="' + (cur === 'win' ? 'on' : '') + '">' + label + ' 승</button>' +
-          '<button data-act="play:side" data-type="' + type + '" data-uid="' + esc(uid) + '" data-val="erase" class="erase ' + (cur === 'erase' ? 'on' : '') + '">지우개</button>';
+        return '<div class="side-chips" data-side-row="' + type + '">' +
+          '<span class="side-label">' + label + '</span>' +
+          '<button data-act="play:side" data-type="' + type + '" data-uid="' + esc(uid) + '" data-val="win" class="' + (cur === 'win' ? 'on' : '') + '">' + label + ' 승</button>' +
+          '<button data-act="play:side" data-type="' + type + '" data-uid="' + esc(uid) + '" data-val="erase" class="erase ' + (cur === 'erase' ? 'on' : '') + '">지우개</button>' +
+        '</div>';
       }).join('');
 
       var doubleBtn = '';
@@ -449,7 +452,7 @@ var App = (function () {
           '</button>' +
           '<button class="stepper" data-act="play:inc" data-uid="' + esc(uid) + '" data-d="1" aria-label="타수 늘리기">＋</button>' +
         '</div>' +
-        (activeSides.length ? '<div class="side-chips">' + sideChips + '</div>' : '') +
+        sideChips +
         doubleBtn +
       '</div>';
     }).join('');
