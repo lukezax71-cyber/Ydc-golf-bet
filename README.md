@@ -69,6 +69,7 @@ tools/build.py        src → index.html 합치기
 tools/make_icons.py   아이콘 생성
 tests/test_rules.py   규칙 단위 테스트 (102개 검증)
 tests/test_browser.py 실제 헤드리스 크로미움(390×844) 조작 테스트 + 스크린샷
+tests/test_deploy.py  배포된 GitHub Pages 사이트 점검
 screens/              테스트에서 저장한 화면 캡처
 ```
 
@@ -78,6 +79,7 @@ screens/              테스트에서 저장한 화면 캡처
 python3 tools/build.py          # index.html 재생성 (src 수정 후 필수)
 python3 tests/test_rules.py     # 규칙 검증
 python3 tests/test_browser.py   # 실제 브라우저에서 라운드 진행·새로고침·되돌리기·수정·오프라인 검증
+python3 tests/test_deploy.py    # 배포 주소(https://lukezax71-cyber.github.io/Ydc-golf-bet/) 점검
 ```
 
 `tests/test_browser.py`는 `playwright`와 크로미움 실행 파일이 필요합니다
