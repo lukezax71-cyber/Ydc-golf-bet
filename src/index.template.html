@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>YDC 골프 내기 — Golf Bet Tracker</title>
+  <meta name="description" content="홀마다 자동 저장되는 오프라인 골프 내기 정산 앱. YDC 모드 / 오장 모드, 니어·롱기 이월, 최소 이체 정산.">
+  <meta name="color-scheme" content="light dark">
+
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#14532d">
+  <meta name="application-name" content="YDC 골프 내기">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="YDC 골프">
+  <meta name="format-detection" content="telephone=no">
+
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
+
+  <style>/*STYLE*/</style>
+</head>
+<body>
+  <div id="root"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <noscript>
+    <div style="padding:24px;font-family:sans-serif">이 앱은 자바스크립트가 필요합니다. 사파리에서 다시 열어 주세요.</div>
+  </noscript>
+
+  <script>/*RULES*/</script>
+  <script>/*STORE*/</script>
+  <script>/*APP*/</script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function () {});
+      });
+    }
+  </script>
+</body>
+</html>
