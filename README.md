@@ -86,6 +86,16 @@ python3 tests/test_browser.py   # 실제 브라우저에서 라운드 진행·�
 ## 배포
 
 `main` 브랜치 루트가 그대로 GitHub Pages로 올라갑니다(상대 경로 `./` 사용).
-`index.html`을 고친 뒤 커밋·푸시하면 1~2분 안에 반영됩니다.
+
+```bash
+python3 tools/build.py
+git add -A && git commit -m "..."
+sh tools/deploy.sh        # main 푸시 + gh-pages(발행 브랜치) 동기화
+```
+
+이 저장소의 Pages 발행 브랜치는 현재 **gh-pages** 로 설정되어 있습니다
+(GitHub 앱 권한으로는 설정 변경이 안 되어, `gh-pages` 브랜치를 만들어 켰습니다).
+`tools/deploy.sh` 가 main 과 gh-pages 를 같은 내용으로 맞춰 주므로 그대로 쓰면 됩니다.
+Settings → Pages 에서 Source 를 `main` / `/ (root)` 로 바꾸면 앞으로는 main 만 푸시해도 됩니다.
 아이폰 홈 화면 아이콘은 서비스 워커 캐시 때문에 즉시 바뀌지 않을 수 있습니다 —
 그럴 때는 사파리에서 페이지를 새로 열거나 아이콘을 지웠다가 다시 추가하세요.
