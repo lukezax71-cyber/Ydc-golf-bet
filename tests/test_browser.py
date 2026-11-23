@@ -500,6 +500,169 @@ def run():
             shot(p6, '62-result-two-sides.png')
             ctx6.close()
 
+            # ================= 시나리오 7: 지난 라운드 삭제 =================
+            print('\n[7] 지난 라운드 삭제 · 확인 모달 · 새로고침 뒤에도 삭제 유지')
+            ctx7 = browser.new_context(viewport=bu.MOBILE, device_scale_factor=2, locale='ko-KR')
+            p7 = ctx7.new_page()
+            errs7 = []
+            p7.on('pageerror', lambda e: errs7.append(str(e)))
+            p7.on('console', lambda m: errs7.append(m.text) if m.type == 'error' else None)
+
+            def archive_js(p):
+                raw = p.evaluate("localStorage.getItem('ydcgb:v1:archive')")
+                return json.loads(raw) if raw else []
+
+            def idb_archive(p):
+                return p.evaluate("""() => new Promise((resolve) => {
+                    const req = indexedDB.open('ydc-golf-bet', 1);
+                    req.onupgradeneeded = () => {};
+                    req.onsuccess = () => {
+                      const db = req.result;
+                      if (!db.objectStoreNames.contains('kv')) return resolve(null);
+                      const tx = db.transaction('kv', 'readonly');
+                      const g = tx.objectStore('kv').get('archive');
+                      g.onsuccess = () => resolve(g.result || null);
+                      g.onerror = () => resolve(null);
+                    };
+                    req.onerror = () => resolve(null);
+                })""")
+
+            def make_round(p, title):
+                start_round(p, 'ydc', ['가', '나', '다'], base=1000, holes=9, title=title)
+                order = names(p)
+                fill_scores(p, dict(zip(order, [0, 1, 1])))
+                p.click('[data-act="play:finish"]')
+                p.wait_for_timeout(300)
+                if p.locator('#modalBack').count():
+                    p.locator('#modalBack button').first.click()
+                    p.wait_for_timeout(250)
+                p.click('[data-act="result:next"]')
+                p.wait_for_timeout(200)
+                p.click('[data-act="play:menu"]')
+                modal_click(p, '라운드 종료')
+                modal_click(p, '종료하고 정산')
+                p.wait_for_timeout(400)
+
+            def home_titles(p):
+                return p.eval_on_selector_all('.round-item .title', 'els => els.map(e => e.textContent.trim())')
+
+            p7.goto(url, wait_until='load')
+            p7.wait_for_timeout(300)
+            for t in ['삭제 A', '삭제 B', '삭제 C', '삭제 D', '삭제 E']:
+                make_round(p7, t)
+                if t != '삭제 E':
+                    p7.click('[data-act="nav:home"]')
+                    p7.wait_for_timeout(250)
+            ok('다섯 라운드 보관', len(archive_js(p7)) == 5, len(archive_js(p7)))
+
+            # 마지막 라운드는 요약 화면에 있으므로 홈으로 나온다
+            p7.click('[data-act="nav:home"]')
+            p7.wait_for_timeout(400)
+            body = p7.inner_text('#root')
+            ok('홈 카드 3개에 삭제 버튼', p7.locator('.round-item .round-del').count() == 3,
+               p7.locator('.round-item .round-del').count())
+            ok('홈 카드 순서', home_titles(p7) == ['삭제 E', '삭제 D', '삭제 C'], home_titles(p7))
+            ok('전체 보기 버튼', '전체 5개 보기' in body, body[:300])
+            del_box = p7.evaluate("""() => {
+                    const b = document.querySelector('.round-item .round-del');
+                    const r = b.getBoundingClientRect();
+                    return {w: Math.round(r.width), h: Math.round(r.height)};
+                }""")
+            ok('삭제 버튼 44px 이상', del_box['w'] >= 44 and del_box['h'] >= 44, del_box)
+            ok('삭제 버튼 라벨 있음', '삭제' in (p7.locator('.round-item .round-del').first.get_attribute('aria-label') or ''),
+               p7.locator('.round-item .round-del').first.get_attribute('aria-label'))
+            shot(p7, '81-home-delete-button.png', full=True)
+
+            # 삭제 버튼을 눌러도 요약이 열리지 않고 확인 모달만 뜬다
+            p7.locator('.round-item .round-del').nth(1).click()
+            p7.wait_for_timeout(250)
+            ok('삭제 누르면 요약 안 열림', '최종 정산' not in p7.inner_text('#root'), p7.inner_text('#root')[:120])
+            ok('확인 모달 뜸', p7.locator('#modalBack').count() == 1)
+            modal_text = p7.inner_text('#modalBack')
+            ok('모달에 라운드 제목', '삭제 D' in modal_text, modal_text)
+            ok('모달에 날짜·정보', '2026.11.' in modal_text and '1홀' in modal_text, modal_text)
+            ok('모달에 취소·삭제 버튼',
+               p7.locator('#modalBack button', has_text='취소').count() == 1 and
+               p7.locator('#modalBack button', has_text='삭제').count() == 1)
+            shot(p7, '82-delete-confirm.png')
+
+            # 취소하면 그대로 남는다
+            modal_click(p7, '취소')
+            p7.wait_for_timeout(250)
+            ok('취소하면 삭제 안 됨', len(archive_js(p7)) == 5, len(archive_js(p7)))
+            ok('취소하면 목록 그대로', home_titles(p7) == ['삭제 E', '삭제 D', '삭제 C'], home_titles(p7))
+
+            # 실제 삭제: 홈 카드에서 E를 지운다
+            p7.locator('.round-item .round-del').first.click()
+            p7.wait_for_timeout(200)
+            ok('모달이 E를 가리킴', '삭제 E' in p7.inner_text('#modalBack'), p7.inner_text('#modalBack'))
+            modal_click(p7, '삭제')
+            p7.wait_for_timeout(400)
+            body = p7.inner_text('#root')
+            ok('삭제 뒤 홈에 E 없음', '삭제 E' not in body, body[:200])
+            ok('삭제 뒤 목록 3개', home_titles(p7) == ['삭제 D', '삭제 C', '삭제 B'], home_titles(p7))
+            ok('localStorage 보관 4개', len(archive_js(p7)) == 4, [x['title'] for x in archive_js(p7)])
+            ok('IDB 보관 4개', len(idb_archive(p7)) == 4, idb_archive(p7) and len(idb_archive(p7)))
+            ok('삭제한 라운드가 진행 중 카드로 재등장 안 함',
+               '끝난 라운드' not in p7.inner_text('#root') and '진행 중' not in p7.inner_text('#root'),
+               p7.inner_text('#root')[:200])
+            shot(p7, '83-home-after-delete.png', full=True)
+
+            # 보관함(전체 보기) 화면에서도 삭제
+            p7.click('[data-act="nav:archive"]')
+            p7.wait_for_timeout(300)
+            ok('보관함 4개', p7.locator('.round-item').count() == 4, p7.locator('.round-item').count())
+            ok('보관함에도 44px 삭제 버튼', p7.evaluate("""() => {
+                    const b = document.querySelector('.round-item .round-del');
+                    const r = b.getBoundingClientRect();
+                    return r.width >= 44 && r.height >= 44;
+                }"""))
+            p7.locator('.round-item .round-del').last.click()  # 가장 오래된 '삭제 A'
+            p7.wait_for_timeout(200)
+            ok('보관함 모달에 A', '삭제 A' in p7.inner_text('#modalBack'), p7.inner_text('#modalBack'))
+            modal_click(p7, '삭제')
+            p7.wait_for_timeout(400)
+            ok('보관함에 머무름', '지난 라운드' in p7.inner_text('#root') and '지난 라운드' in p7.inner_text('.page-title'),
+               p7.inner_text('#root')[:80])
+            ok('보관함 3개', p7.locator('.round-item').count() == 3, p7.locator('.round-item').count())
+            ok('A 삭제됨', '삭제 A' not in p7.inner_text('#root'))
+            ok('localStorage 3개', len(archive_js(p7)) == 3, [x['title'] for x in archive_js(p7)])
+            shot(p7, '84-archive-after-delete.png', full=True)
+
+            # 새로고침해도 삭제가 유지되는지
+            p7.reload(wait_until='load')
+            p7.wait_for_timeout(600)
+            ok('새로고침 뒤에도 3개', len(archive_js(p7)) == 3, [x['title'] for x in archive_js(p7)])
+            ok('새로고침 뒤 IDB도 3개', len(idb_archive(p7)) == 3, idb_archive(p7) and len(idb_archive(p7)))
+            body = p7.inner_text('#root')
+            ok('새로고침 뒤 A·E 없음', '삭제 A' not in body and '삭제 E' not in body, body[:200])
+            ok('새로고침 뒤 삭제 버튼 3개', p7.locator('.round-item .round-del').count() == 3,
+               p7.locator('.round-item .round-del').count())
+
+            # 요약 화면에서도 삭제 (지난 라운드 열람 중)
+            p7.locator('.round-item [data-act="archive:open"]').first.click()
+            p7.wait_for_timeout(350)
+            ok('요약 열림', '최종 정산' in p7.inner_text('#root'))
+            ok('요약에 라운드 삭제 버튼', p7.locator('[data-act="archive:del"]').count() >= 1)
+            shot(p7, '85-summary-delete-button.png', full=True)
+            p7.locator('[data-act="archive:del"]').first.click()
+            p7.wait_for_timeout(250)
+            ok('요약 삭제 모달', '라운드 삭제' in p7.inner_text('#modalBack'), p7.inner_text('#modalBack'))
+            modal_click(p7, '삭제')
+            p7.wait_for_timeout(450)
+            body = p7.inner_text('#root')
+            ok('요약 삭제 뒤 홈', '새 라운드 시작' in body, body[:150])
+            ok('요약 삭제 뒤 보관 2개', len(archive_js(p7)) == 2, [x['title'] for x in archive_js(p7)])
+            ok('IDB도 2개', len(idb_archive(p7)) == 2, idb_archive(p7) and len(idb_archive(p7)))
+
+            p7.reload(wait_until='load')
+            p7.wait_for_timeout(500)
+            ok('마지막 새로고침에도 2개', len(archive_js(p7)) == 2, [x['title'] for x in archive_js(p7)])
+            ok('목록 2개 유지', home_titles(p7) == ['삭제 C', '삭제 B'], home_titles(p7))
+            ok('삭제 콘솔 오류 없음', not errs7, errs7)
+            shot(p7, '86-home-final.png', full=True)
+            ctx7.close()
+
             browser.close()
     finally:
         httpd.shutdown()

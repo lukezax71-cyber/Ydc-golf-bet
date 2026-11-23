@@ -175,11 +175,23 @@ var Store = (function () {
     return list;
   }
 
+  // 보관함에서 한 라운드만 지운다. localStorage 와 IndexedDB 를 같이 맞춘다.
+  // localStorage 목록에 없고 IndexedDB 에만 남아 있는 경우까지 확인해서 지운다.
   function removeFromArchive(id) {
-    var list = loadArchive().filter(function (r) { return r.id !== id; });
-    writeJSON(KEY.archive, list);
-    try { idbPut('archive', list).catch(function () {}); } catch (e) {}
-    return list;
+    var before = loadArchive();
+    var list = before.filter(function (r) { return r.id !== id; });
+    if (list.length !== before.length) {
+      writeJSON(KEY.archive, list);
+      try { idbPut('archive', list).catch(function () {}); } catch (e) {}
+      return Promise.resolve(list);
+    }
+    return idbGet('archive').then(function (stored) {
+      var src = (Array.isArray(stored) && stored.length) ? stored : before;
+      var fixed = src.filter(function (r) { return r && r.id !== id; });
+      writeJSON(KEY.archive, fixed);
+      try { idbPut('archive', fixed).catch(function () {}); } catch (e) {}
+      return fixed;
+    }).catch(function () { return list; });
   }
 
   function newId() {

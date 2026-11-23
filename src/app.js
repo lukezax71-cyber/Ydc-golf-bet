@@ -54,6 +54,22 @@ var App = (function () {
     return d.getFullYear() + '.' + p(d.getMonth() + 1) + '.' + p(d.getDate());
   }
 
+  function roundTitle(r) { return ((r && r.title) || '').trim() || '제목 없는 라운드'; }
+
+  function roundMeta(r, v) {
+    v = v || YDC.recomputeRound(r);
+    return todayLabel(r.createdAt) + ' · ' + modeLabel(r.mode) + ' · ' + v.holeCount + '홀 · ' +
+      v.players.length + '명';
+  }
+
+  function trashSVG() {
+    return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' +
+      '<path d="M4 7h16"/><path d="M9.5 4.5h5"/>' +
+      '<path d="M6.6 7l.9 12.1a1.9 1.9 0 0 0 1.9 1.9h5.2a1.9 1.9 0 0 0 1.9-1.9L17.4 7"/>' +
+      '<path d="M10.2 11v6.2"/><path d="M13.8 11v6.2"/></svg>';
+  }
+
   /* ------------------------------------------------------------- 모달 */
 
   var modalResolve = null;
@@ -114,6 +130,43 @@ var App = (function () {
         { label: '취소', value: 'no', kind: 'ghost' }
       ]
     }).then(function (v) { return v === 'ok'; });
+  }
+
+  /* ------------------------------------------------------- 라운드 삭제 */
+
+  // 삭제 전 확인: 어떤 라운드인지(제목·날짜·모드·홀수) 모달에 보여 주고 한 번 더 묻는다.
+  function askDeleteRound(r) {
+    var body =
+      '<div class="del-round">' +
+        '<div class="bold">' + esc(roundTitle(r)) + '</div>' +
+        '<div class="tiny muted">' + esc(roundMeta(r)) + '</div>' +
+      '</div>' +
+      '<div class="small mt">이 라운드 기록을 이 기기에서 지웁니다. 되돌릴 수 없습니다.</div>';
+    confirmModal('라운드 삭제', body, '삭제', true).then(function (okay) {
+      if (!okay) return;
+      deleteRound(r.id);
+    });
+  }
+
+  // localStorage 와 IndexedDB 보관함에서 같이 지우고 화면을 바로 다시 그린다.
+  // 그 라운드가 '끝난 라운드'(진행 중 저장본)로도 남아 있으면 그것까지 같이 비운다.
+  function deleteRound(id) {
+    var active = Store.loadActiveSync();
+    var alsoActive = !!(active && active.id === id && active.finishedAt);
+    var wasReading = !!(S.reading && S.reading.id === id);
+    var viewingSame = !!(S.round && S.round.id === id);
+
+    try { Store.removeFromArchive(id); } catch (e) {}
+    if (alsoActive) { try { Store.clearActive(); } catch (e) {} }
+    if (wasReading) S.reading = null;
+    if (alsoActive || viewingSame) S.round = null;
+
+    if (wasReading || viewingSame) S.screen = 'home';
+    else if (S.screen !== 'archive') S.screen = 'home';
+
+    render();
+    window.scrollTo(0, 0);
+    toast('삭제했습니다');
   }
 
   /* --------------------------------------------------------- 저장/계산 */
@@ -198,7 +251,11 @@ var App = (function () {
           '<div class="tiny muted">' + todayLabel(r.createdAt) + ' · ' + modeLabel(r.mode) + ' · ' +
             v.holeCount + '홀 · 1위 ' + esc(topName) + ' ' + signed(topVal) + '</div>' +
         '</div>' +
-        '<button class="btn btn-soft btn-sm" data-act="archive:open" data-id="' + esc(r.id) + '">보기</button>' +
+        '<div class="round-actions">' +
+          '<button class="btn btn-soft btn-sm" data-act="archive:open" data-id="' + esc(r.id) + '">보기</button>' +
+          '<button class="round-del" data-act="archive:del" data-id="' + esc(r.id) + '" ' +
+            'aria-label="' + esc(roundTitle(r)) + ' 삭제" title="라운드 삭제">' + trashSVG() + '</button>' +
+        '</div>' +
       '</div>';
     }).join('');
 
@@ -688,7 +745,10 @@ var App = (function () {
       '</div>' +
 
       (reading
-        ? '<button class="btn btn-ghost" data-act="nav:home">홈으로</button>'
+        ? '<div class="btn-row">' +
+            '<button class="btn btn-ghost" data-act="nav:home">홈으로</button>' +
+            '<button class="btn btn-danger" data-act="archive:del" data-id="' + esc(v.round.id) + '">라운드 삭제</button>' +
+          '</div>'
         : '<div class="btn-row">' +
             '<button class="btn btn-ghost" data-act="share:text">텍스트 복사</button>' +
             '<button class="btn btn-gold" data-act="share:card">결과 카드 공유</button>' +
@@ -711,8 +771,11 @@ var App = (function () {
           '<div class="tiny muted">' + todayLabel(r.createdAt) + ' · ' + modeLabel(r.mode) + ' · ' + v.holeCount + '홀' +
             (best ? ' · 1위 ' + esc(best.name) : '') + '</div>' +
         '</div>' +
-        '<button class="btn btn-soft btn-sm" data-act="archive:open" data-id="' + esc(r.id) + '">보기</button>' +
-        '<button class="btn btn-ghost btn-sm" data-act="archive:del" data-id="' + esc(r.id) + '" aria-label="삭제">✕</button>' +
+        '<div class="round-actions">' +
+          '<button class="btn btn-soft btn-sm" data-act="archive:open" data-id="' + esc(r.id) + '">보기</button>' +
+          '<button class="round-del" data-act="archive:del" data-id="' + esc(r.id) + '" ' +
+            'aria-label="' + esc(roundTitle(r)) + ' 삭제" title="라운드 삭제">' + trashSVG() + '</button>' +
+        '</div>' +
       '</div>';
     }).join('') : '<div class="empty">저장된 라운드가 없습니다.</div>';
 
@@ -1491,14 +1554,10 @@ var App = (function () {
         return;
       }
       case 'archive:del': {
-        var id2 = el.getAttribute('data-id');
-        confirmModal('라운드 삭제', '<div class="small">이 라운드 기록을 기기에서 지웁니다. 되돌릴 수 없습니다.</div>', '삭제', true)
-          .then(function (ok) {
-            if (!ok) return;
-            Store.removeFromArchive(id2);
-            render();
-            toast('삭제했습니다');
-          });
+        var delId = el.getAttribute('data-id');
+        var victim = Store.loadArchive().filter(function (r) { return r.id === delId; })[0];
+        if (!victim) { toast('라운드를 찾을 수 없습니다'); return; }
+        askDeleteRound(victim);
         return;
       }
     }

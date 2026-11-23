@@ -391,6 +391,47 @@ select.input {
   white-space: nowrap;
 }
 
+/* 카드 안 버튼 묶음: '보기'와 '삭제'를 나란히 두되, 삭제는 44px 탭 영역을 따로 갖는다.
+   (카드 본문은 누를 수 없게 두어 삭제를 누를 때 요약이 열리지 않는다) */
+.round-item .round-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.round-item .round-actions .btn-sm {
+  min-height: 44px;
+  padding: 8px 14px;
+  font-size: .92rem;
+}
+.round-del {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  background: var(--card);
+  color: var(--lose);
+  border: 1px solid var(--line-strong);
+}
+.round-del:active,
+.round-del:hover { background: var(--lose-soft); }
+.round-del svg { pointer-events: none; }
+
+/* 삭제 확인 모달: 어떤 라운드인지 제목·날짜로 한 번 더 보여 준다 */
+.del-round {
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.del-round .bold { font-size: .98rem; }
+
 /* ------------------------------------------------------------- 플레이 */
 
 .hole-head {
