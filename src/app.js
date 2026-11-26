@@ -686,10 +686,28 @@ var App = (function () {
         '<td class="num" style="width:28px;color:var(--muted)">' + (i + 1) + '</td>' +
         '<td>' + esc(p.name) + '</td>' +
         '<td class="num">' + (p.points > 0 ? '+' + p.points : p.points) + '</td>' +
+        (mode === 'ydc' ? '<td class="num ' + netClass(p.net) + '">' + (p.net ? signed(p.net) : '–') + '</td>' : '') +
         (mode === 'ydc' ? '<td class="num ' + netClass(p.adj) + '">' + (p.adj ? signed(p.adj) : '–') + '</td>' : '') +
         '<td class="num ' + netClass(p.final) + '"><b>' + signed(p.final) + '</b></td>' +
       '</tr>';
     }).join('');
+
+    var returnCard = '';
+    if (mode === 'ydc') {
+      var returnList = v.roundEnd.rows.length
+        ? '<ul class="tx-list">' + v.roundEnd.rows.map(function (t) {
+            return '<li><span class="who">' + esc(nameOf(t.from)) + ' → ' + esc(nameOf(t.to)) +
+              ' <span class="tiny muted">(' + t.diff + '타 차)</span></span>' +
+              '<span class="amt">' + won(t.amount) + '</span></li>';
+          }).join('') + '</ul>'
+        : '<div class="small muted">전원 동타로 돌려줄 금액이 없습니다.</div>';
+      returnCard =
+        '<div class="card">' +
+          '<div class="bold" style="margin-bottom:4px">타수 차이 돌려주기</div>' +
+          '<div class="tiny muted" style="margin-bottom:8px">타수가 적은 사람이 많은 사람에게 (타수 차 × 기본 배팅)을 돌려줍니다.</div>' +
+          returnList +
+        '</div>';
+    }
 
     var settleRows = v.roundEnd.settlements.map(function (t) {
       return { from: t.from, to: t.to, amount: t.amount };
@@ -722,17 +740,20 @@ var App = (function () {
         '홀 · 기본 ' + won(v.baseBet) + '/타 · ' + todayLabel(v.round.createdAt) + '</div>' +
 
       '<div class="card">' +
-        '<table class="data">' +
+        '<table class="data compact">' +
           '<thead><tr><th></th><th>선수</th><th class="num">타수</th>' +
-            (mode === 'ydc' ? '<th class="num">라운드 정산</th>' : '') +
+            (mode === 'ydc' ? '<th class="num">홀</th><th class="num">돌려주기</th>' : '') +
             '<th class="num">최종</th></tr></thead>' +
           '<tbody>' + rankRows + '</tbody>' +
         '</table>' +
-        (mode === 'ydc' ? '<div class="tiny muted mt">라운드 정산 = 총 타수 차이 × 기본 배팅 (잘 친 사람이 못 친 사람에게). 홀 정산과 별도로 더해집니다.</div>' : '') +
+        (mode === 'ydc' ? '<div class="tiny muted mt">최종 = 홀 정산 + 돌려주기 (타수 적은 사람이 많은 사람에게 타수 차 × 기본 배팅)</div>' : '') +
       '</div>' +
 
+      returnCard +
+
       '<div class="card">' +
-        '<div class="bold" style="margin-bottom:8px">최종 정산</div>' +
+        '<div class="bold" style="margin-bottom:4px">' + (mode === 'ydc' ? '최종 정산 (돌려준 후)' : '최종 정산') + '</div>' +
+        (mode === 'ydc' ? '<div class="tiny muted" style="margin-bottom:8px">홀 정산과 타수 차이 돌려주기를 모두 합산한 최종 금액입니다.</div>' : '') +
         txList(settleRows) +
         '<div class="print-line"></div>' +
         '<div class="small">받을 돈 합계 <b class="pos">' + won(receive) + '</b> · 줄 돈 합계 <b class="neg">' + won(pay) + '</b></div>' +

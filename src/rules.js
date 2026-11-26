@@ -474,15 +474,23 @@ var YDC = (function () {
     // ---- YDC 모드 라운드 최종 정산 (총 타수 기준, 잘 친 사람 → 못 친 사람) ----
     var roundEndRows = [];
     if (mode === MODE.YDC && holes.length) {
-      for (var i = 0; i < players.length; i++) {
-        for (var j = 0; j < players.length; j++) {
+      var byScoreOrder = players.map(function (p, idx) {
+        return { p: p, idx: idx };
+      }).sort(function (a, b) {
+        if (a.p.points !== b.p.points) return a.p.points - b.p.points;
+        return a.idx - b.idx;
+      });
+      for (var i = 0; i < byScoreOrder.length; i++) {
+        for (var j = 0; j < byScoreOrder.length; j++) {
           if (i === j) continue;
-          if (players[i].points < players[j].points) {
+          var pi = byScoreOrder[i].p;
+          var pj = byScoreOrder[j].p;
+          if (pi.points < pj.points) {
             roundEndRows.push({
-              from: players[i].uid,
-              to: players[j].uid,
-              amount: (players[j].points - players[i].points) * base,
-              diff: players[j].points - players[i].points
+              from: pi.uid,
+              to: pj.uid,
+              amount: (pj.points - pi.points) * base,
+              diff: pj.points - pi.points
             });
           }
         }
@@ -584,8 +592,16 @@ var YDC = (function () {
     });
     lines.push('');
 
+    if (view.mode === MODE.YDC && view.roundEnd.rows.length) {
+      lines.push('■ 타수 차이 돌려주기');
+      view.roundEnd.rows.forEach(function (t) {
+        lines.push(nameOf[t.from] + ' → ' + nameOf[t.to] + ': ' + won(t.amount) + ' (' + t.diff + '타 차)');
+      });
+      lines.push('');
+    }
+
     // 정산 내역
-    lines.push('■ 정산');
+    lines.push(view.mode === MODE.YDC ? '■ 최종 정산 (돌려준 후)' : '■ 정산');
     if (view.roundEnd.settlements.length === 0) {
       lines.push('정산할 금액이 없습니다.');
     } else {

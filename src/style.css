@@ -679,6 +679,8 @@ table.data td {
 }
 table.data tr:last-child td { border-bottom: 0; }
 table.data td.num, table.data th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.data.compact { font-size: .82rem; }
+table.data.compact th, table.data.compact td { padding: 8px 2px; white-space: nowrap; }
 table.data tr.total td { font-weight: 900; border-top: 2px solid var(--line-strong); }
 .pos { color: var(--win); font-weight: 900; }
 .neg { color: var(--lose); font-weight: 900; }
