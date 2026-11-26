@@ -33,7 +33,12 @@ var App = (function () {
 
   function won(n) { return YDC.won(n); }
   function signed(n) { return YDC.signedWon(n); }
-  function modeLabel(mode) { return mode === 'ojang' ? '오장 모드' : 'YDC 모드'; }
+  function modeLabel(mode) {
+    if (mode === 'ojang') return '오장 모드';
+    if (mode === 'team') return '팀플레이';
+    if (mode === 'updown') return '업다운 팀플레이';
+    return 'YDC 모드';
+  }
 
   function toast(msg, ms) {
     var t = $('#toast');
@@ -282,8 +287,9 @@ var App = (function () {
 
   function defaultSetup() {
     var prefs = Store.loadPrefs() || {};
+    var m = (prefs.mode === 'ojang' || prefs.mode === 'team' || prefs.mode === 'updown') ? prefs.mode : 'ydc';
     return {
-      mode: prefs.mode === 'ojang' ? 'ojang' : 'ydc',
+      mode: m,
       title: '',
       baseBet: prefs.baseBet || 1000,
       count: prefs.count || 4,
@@ -339,21 +345,29 @@ var App = (function () {
 
   function viewSetup() {
     var cfg = S.setup || (S.setup = defaultSetup());
+    var teamOnly = YDC.isTeamOnlyMode(cfg.mode);
+    if (teamOnly) cfg.count = 4;
     var names = setupNames(cfg);
-    var showTeam = cfg.mode === 'ydc' && cfg.count === 4;
+    var showTeam = (cfg.mode === 'ydc' && cfg.count === 4) || teamOnly;
     var tp = cfg.teamPlay || (cfg.teamPlay = { enabled: false, nameA: '제우스', nameB: '아폴론', teams: ['A', 'A', 'B', 'B'] });
-    var tpOn = showTeam && !!tp.enabled;
+    var tpOn = teamOnly || (showTeam && !!tp.enabled);
     var nameA = tp.nameA || '제우스';
     var nameB = tp.nameB || '아폴론';
 
     var teamTop = '';
     if (showTeam) {
+      var teamHeader = teamOnly
+        ? '<div class="bold" style="font-size:.95rem">2:2 팀 편성 (그리스 신)</div>' +
+          '<div class="tiny muted">' + (cfg.mode === 'updown'
+            ? '잘친 사람끼리 1점 + 못친 사람끼리 1점 · 지는 팀 버디 2점(2명 다 버디 4점)'
+            : '전반 1 · 10~17홀 2 · 18홀 4점 · 홀수 베스트볼 / 짝수 합산') + '</div>'
+        : '<div class="switch-row">' +
+            '<div><div class="bold" style="font-size:.95rem">2:2 팀플레이</div>' +
+            '<div class="tiny muted">전반 1 · 10~17홀 2 · 18홀 4점 · 홀수 베스트볼 / 짝수 합산</div></div>' +
+            '<label class="switch"><input type="checkbox" data-act="setup:team-toggle"' + (tpOn ? ' checked' : '') + '><span></span></label>' +
+          '</div>';
       teamTop = '<div class="card tight" style="margin-bottom:10px">' +
-        '<div class="switch-row">' +
-          '<div><div class="bold" style="font-size:.95rem">2:2 팀플레이</div>' +
-          '<div class="tiny muted">전반 1 · 10~17홀 2 · 18홀 4점 · 홀수 베스트볼 / 짝수 합산</div></div>' +
-          '<label class="switch"><input type="checkbox" data-act="setup:team-toggle"' + (tpOn ? ' checked' : '') + '><span></span></label>' +
-        '</div>' +
+        teamHeader +
         (tpOn ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">' +
           '<div><div class="tiny muted bold" style="margin-bottom:4px">팀 1 (그리스 신)</div>' + godSelectHTML('A', nameA) + '</div>' +
           '<div><div class="tiny muted bold" style="margin-bottom:4px">팀 2 (그리스 신)</div>' + godSelectHTML('B', nameB) + '</div>' +
@@ -398,15 +412,21 @@ var App = (function () {
 
     var modeNote = cfg.mode === 'ojang'
       ? '언더파·+3 이상·최저타 동타가 나오면 다음 홀 ×2. 개인별 <b>더블 2회</b> 사용 가능(1홀 1회, 이미 2배면 사용 안 됨).'
+      : cfg.mode === 'team'
+      ? '개인 돈 내기 없이 <b>2:2 팀전</b>만 진행합니다. 전반 1점·후반 2점·18홀 4점, 홀수홀 베스트볼·짝수홀 합산, 도미 홀 및 마지막 홀 동점 역전승.'
+      : cfg.mode === 'updown'
+      ? '팀에서 <b>잘친 사람끼리 1점 + 못친 사람끼리 1점</b> 대결합니다. 지고 있는 팀에서 1명 버디 시 <b>2점</b>, 2명 다 버디 시 <b>4점</b>(도미 홀 · 동점 역전승 포함).'
       : '전원 파 ×10 · 전원 동타 ×5 · 스트레이트 ×5 · 3명 동타 ×3 · 2명 동타 ×2 · 언더파/+3 이상 ×2 중 <b>가장 큰 하나</b>만 적용.';
 
     return header() +
       '<div class="page-title">라운드 설정</div>' +
 
       '<div class="field"><label>모드</label>' +
-        '<div class="seg mode">' +
-          '<button data-act="setup:mode" data-mode="ydc" class="' + (cfg.mode === 'ydc' ? 'on' : '') + '">YDC</button>' +
-          '<button data-act="setup:mode" data-mode="ojang" class="' + (cfg.mode === 'ojang' ? 'on' : '') + '">오장 (스탠다드)</button>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+          '<button class="btn ' + (cfg.mode === 'ydc' ? 'btn-primary' : 'btn-ghost') + '" data-act="setup:mode" data-mode="ydc" style="min-height:46px">YDC</button>' +
+          '<button class="btn ' + (cfg.mode === 'ojang' ? 'btn-primary' : 'btn-ghost') + '" data-act="setup:mode" data-mode="ojang" style="min-height:46px">오장 (스탠다드)</button>' +
+          '<button class="btn ' + (cfg.mode === 'team' ? 'btn-primary' : 'btn-ghost') + '" data-act="setup:mode" data-mode="team" style="min-height:46px">팀플레이</button>' +
+          '<button class="btn ' + (cfg.mode === 'updown' ? 'btn-primary' : 'btn-ghost') + '" data-act="setup:mode" data-mode="updown" style="min-height:46px">업다운 팀플레이</button>' +
         '</div>' +
         '<div class="note mt">' + modeNote + '</div>' +
       '</div>' +
@@ -415,20 +435,21 @@ var App = (function () {
         '<input class="input" type="text" maxlength="30" placeholder="예: 금요일 자유CC" data-act="setup:title" value="' + esc(cfg.title) + '">' +
       '</div>' +
 
-      '<div class="field"><label>기본 배팅 (₩ / 타)</label>' +
-        '<input class="input mono" type="number" inputmode="numeric" min="0" step="500" data-act="setup:base" value="' + cfg.baseBet + '">' +
-        '<div class="chips mt">' +
-          [1000, 2000, 3000, 5000, 10000].map(function (v) {
-            return '<button data-act="setup:base-chip" data-v="' + v + '" class="' + (cfg.baseBet === v ? 'on' : '') + '">' + v.toLocaleString('ko-KR') + '</button>';
-          }).join('') +
+      (teamOnly ? '' :
+        '<div class="field"><label>기본 배팅 (₩ / 타)</label>' +
+          '<input class="input mono" type="number" inputmode="numeric" min="0" step="500" data-act="setup:base" value="' + cfg.baseBet + '">' +
+          '<div class="chips mt">' +
+            [1000, 2000, 3000, 5000, 10000].map(function (v) {
+              return '<button data-act="setup:base-chip" data-v="' + v + '" class="' + (cfg.baseBet === v ? 'on' : '') + '">' + v.toLocaleString('ko-KR') + '</button>';
+            }).join('') +
+          '</div>' +
         '</div>' +
-      '</div>' +
 
-      '<div class="field"><label>인원</label>' +
-        '<div class="seg">' + [2, 3, 4].map(function (n) {
-          return '<button data-act="setup:count" data-n="' + n + '" class="' + (cfg.count === n ? 'on' : '') + '">' + n + '명</button>';
-        }).join('') + '</div>' +
-      '</div>' +
+        '<div class="field"><label>인원</label>' +
+          '<div class="seg">' + [2, 3, 4].map(function (n) {
+            return '<button data-act="setup:count" data-n="' + n + '" class="' + (cfg.count === n ? 'on' : '') + '">' + n + '명</button>';
+          }).join('') + '</div>' +
+        '</div>') +
 
       '<div class="field"><label>홀 수</label>' +
         '<div class="seg">' + [9, 18].map(function (n) {
@@ -570,9 +591,12 @@ var App = (function () {
       return label + ': ' + (pot > 0 ? '<b>' + (pot + 1) + '배</b> 걸려 있음 (이월 ' + pot + '회)' : '1배');
     }).join(' · ') + '</div>' : '';
 
+    var teamOnlyMode = YDC.isTeamOnlyMode(S.round.mode);
     var draftSummary = '';
-    var pn = previewNet(pv, d, uids);
-    draftSummary = '<div class="note mt" id="previewLine">' + previewLineHTML(uids, pn.net) + '</div>';
+    if (!teamOnlyMode) {
+      var pn = previewNet(pv, d, uids);
+      draftSummary = '<div class="note mt" id="previewLine">' + previewLineHTML(uids, pn.net) + '</div>';
+    }
 
     var teamBanner = '';
     if (pv.teamMatch) {
@@ -594,7 +618,7 @@ var App = (function () {
         dormieHtml = '<div class="note warn mt" style="font-weight:800">' +
           '⚠️ 도미 홀 · ' + esc(trT) + '(' + esc(trN) + ')이 이 홀을 못 이기면 경기 조기 종료!</div>';
       }
-      var ruleLabel = tm.nextRuleType === 'best' ? '베스트볼' : '합산';
+      var ruleLabel = tm.nextRuleType === 'updown' ? '업다운 (잘친1+못친1)' : tm.nextRuleType === 'best' ? '베스트볼' : '합산';
       teamBanner = '<div class="card tight mt">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
           '<div class="small bold">팀플레이 · ' + tm.nextPts + '점 (' + ruleLabel + ')' +
@@ -621,11 +645,15 @@ var App = (function () {
           '<div class="value">' + hole + '<small>/' + S.round.totalHoles + '</small></div>' +
         '</div>' +
         '<div class="mult-box">' +
-          '<div class="top"><span class="mult">×' + mult + '</span>' +
-            '<span class="pill ' + (mult > 1 ? 'gold' : '') + '">' + (d.doubleBy ? '더블' : '배율') + '</span></div>' +
-          '<div class="why">' + (S.round.mode === 'ojang' ? '오장' : 'YDC') + ' · ' +
-            (d.doubleBy ? '더블 적용' : (pv.nextAnalysis && pv.nextAnalysis.notes ? pv.nextAnalysis.notes.join(' · ') : '기본')) + '</div>' +
-          '<div class="per">기본 ' + won(S.round.baseBet) + ' × ' + mult + ' = <b>' + won(per) + ' / 타</b></div>' +
+          (teamOnlyMode
+            ? '<div class="top"><span class="mult" style="font-size:1.15rem">' + esc(modeLabel(S.round.mode)) + '</span></div>' +
+              '<div class="why">2:2 팀 대결 · 개인 내기 없음</div>' +
+              '<div class="per">타수 입력 후 완료를 누르세요</div>'
+            : '<div class="top"><span class="mult">×' + mult + '</span>' +
+                '<span class="pill ' + (mult > 1 ? 'gold' : '') + '">' + (d.doubleBy ? '더블' : '배율') + '</span></div>' +
+              '<div class="why">' + (S.round.mode === 'ojang' ? '오장' : 'YDC') + ' · ' +
+                (d.doubleBy ? '더블 적용' : (pv.nextAnalysis && pv.nextAnalysis.notes ? pv.nextAnalysis.notes.join(' · ') : '기본')) + '</div>' +
+              '<div class="per">기본 ' + won(S.round.baseBet) + ' × ' + mult + ' = <b>' + won(per) + ' / 타</b></div>') +
         '</div>' +
       '</div>' +
       (sideNote ? sideNote : '') +
@@ -718,9 +746,17 @@ var App = (function () {
       var tB2 = tm2.nameB || '아폴론';
       var nA = tm2.teamA.map(nameOf).join('·');
       var nB = tm2.teamB.map(nameOf).join('·');
-      var resLine = tr.winner
-        ? '<b>' + esc(tr.winner === 'A' ? tA2 : tB2) + '(' + esc(tr.winner === 'A' ? nA : nB) + ') +' + tr.pts + '점</b>' + (tr.manual ? ' (수동 수정)' : '')
-        : '<b>무승부 (0점)</b>' + (tr.manual ? ' (수동 수정)' : '');
+      var resLine;
+      if (tr.ruleType === 'updown') {
+        var ptsParts = [];
+        if (tr.gainA > 0) ptsParts.push(esc(tA2) + ' +' + tr.gainA + '점');
+        if (tr.gainB > 0) ptsParts.push(esc(tB2) + ' +' + tr.gainB + '점');
+        resLine = '<b>' + (ptsParts.length ? ptsParts.join(' · ') : '무승부 (0점)') + '</b>' + (tr.manual ? ' (수동 수정)' : '');
+      } else {
+        resLine = tr.winner
+          ? '<b>' + esc(tr.winner === 'A' ? tA2 : tB2) + '(' + esc(tr.winner === 'A' ? nA : nB) + ') +' + tr.pts + '점</b>' + (tr.manual ? ' (수동 수정)' : '')
+          : '<b>무승부 (0점)</b>' + (tr.manual ? ' (수동 수정)' : '');
+      }
       var alertLine = '';
       if (tr.clinchedNow) {
         var cw = tm2.clinchedEarly === 'A' ? nA : nB;
@@ -733,54 +769,62 @@ var App = (function () {
         alertLine = '<div class="note warn mt" style="font-weight:800">' +
           '⚠️ 다음 ' + (h.hole + 1) + '번 홀은 도미 홀입니다 (' + esc(dtt) + ' ' + esc(dt) + ' 패/무 시 조기 종료)</div>';
       }
-      var rWord = tr.ruleType === 'best' ? '최저' : '합';
+      var rTitle = tr.ruleType === 'updown' ? '업다운 팀플레이' : '팀플레이 (' + tr.pts + '점 · ' + (tr.ruleType === 'best' ? '베스트볼' : '합산') + ')';
+      var rDetail = tr.ruleType === 'updown'
+        ? esc(tA2) + ' (잘친 ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) + ' / 못친 ' + (tr.worstA > 0 ? '+' + tr.worstA : tr.worstA) + ') vs ' +
+          esc(tB2) + ' (잘친 ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' / 못친 ' + (tr.worstB > 0 ? '+' + tr.worstB : tr.worstB) + ') → ' + resLine
+        : esc(tA2) + '(' + esc(nA) + ') ' + (tr.ruleType === 'best' ? '최저' : '합') + ' ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) +
+          ' vs ' + esc(tB2) + '(' + esc(nB) + ') ' + (tr.ruleType === 'best' ? '최저' : '합') + ' ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' → ' + resLine;
       teamResCard = '<div class="card">' +
-        '<div class="bold" style="margin-bottom:6px">팀플레이 (' + tr.pts + '점 · ' + (tr.ruleType === 'best' ? '베스트볼' : '합산') + (tr.wasDormie ? ' · 도미 홀' : '') + ')</div>' +
-        '<div class="small">' + esc(tA2) + '(' + esc(nA) + ') ' + rWord + ' ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) +
-          ' vs ' + esc(tB2) + '(' + esc(nB) + ') ' + rWord + ' ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' → ' + resLine + '</div>' +
+        '<div class="bold" style="margin-bottom:6px">' + rTitle + (tr.wasDormie ? ' · 도미 홀' : '') + '</div>' +
+        '<div class="small">' + rDetail + '</div>' +
         '<div class="small muted mt">누적 점수: <b>' + esc(tA2) + ' ' + tr.scoreA + '</b> : <b>' + tr.scoreB + ' ' + esc(tB2) + '</b></div>' +
         alertLine +
       '</div>';
     }
 
+    var resTeamOnly = YDC.isTeamOnlyMode(S.round.mode);
+
     return header() +
       '<div class="card">' +
         '<div class="result-head">' +
           '<div class="hole">' + h.hole + '번 홀 결과</div>' +
-          '<div class="sub">기본 ' + won(S.round.baseBet) + ' × ' + h.mult + ' = ' + won(S.round.baseBet * h.mult) + ' / 타' +
-            (h.doubleBy ? ' · ' + esc(nameOf(h.doubleBy)) + ' 더블' : '') + '</div>' +
+          '<div class="sub">' + (resTeamOnly ? esc(modeLabel(S.round.mode)) : ('기본 ' + won(S.round.baseBet) + ' × ' + h.mult + ' = ' + won(S.round.baseBet * h.mult) + ' / 타' +
+            (h.doubleBy ? ' · ' + esc(nameOf(h.doubleBy)) + ' 더블' : ''))) + '</div>' +
         '</div>' +
         '<div class="score-chips">' + chips + '</div>' +
-        (h.multNotes && h.multNotes.length ? '<div class="tiny muted center">이 홀 배율: ' + esc(h.multNotes.join(' · ')) + '</div>' : '') +
+        (!resTeamOnly && h.multNotes && h.multNotes.length ? '<div class="tiny muted center">이 홀 배율: ' + esc(h.multNotes.join(' · ')) + '</div>' : '') +
       '</div>' +
 
-      '<div class="card">' +
-        '<div class="bold" style="margin-bottom:8px">이 홀 정산</div>' +
-        txList(h.simplified) +
-        (sideTx.length ?
-          '<div class="tiny muted bold">내역 상세 (위 정산에 포함)</div>' +
-          '<ul class="tx-list">' + sideTx.map(function (t) {
-            return '<li><span class="who">' + esc(nameOf(t.from)) + ' → ' + esc(nameOf(t.to)) +
-              ' <span class="tag">' + t.tag + '</span></span><span class="amt">' + won(t.amount) + '</span></li>';
-          }).join('') + '</ul>' : '') +
-        '<details class="mt"><summary class="small muted">1:1 전체 내역 보기</summary>' +
-          '<ul class="tx-list mt">' + h.pairwise.map(function (t) {
-            return '<li><span class="who">' + esc(nameOf(t.from)) + ' → ' + esc(nameOf(t.to)) +
-              '</span><span class="amt">' + won(t.amount) + '</span></li>';
-          }).join('') + '</ul>' +
-        '</details>' +
-      '</div>' +
+      (resTeamOnly ? '' :
+        '<div class="card">' +
+          '<div class="bold" style="margin-bottom:8px">이 홀 정산</div>' +
+          txList(h.simplified) +
+          (sideTx.length ?
+            '<div class="tiny muted bold">내역 상세 (위 정산에 포함)</div>' +
+            '<ul class="tx-list">' + sideTx.map(function (t) {
+              return '<li><span class="who">' + esc(nameOf(t.from)) + ' → ' + esc(nameOf(t.to)) +
+                ' <span class="tag">' + t.tag + '</span></span><span class="amt">' + won(t.amount) + '</span></li>';
+            }).join('') + '</ul>' : '') +
+          '<details class="mt"><summary class="small muted">1:1 전체 내역 보기</summary>' +
+            '<ul class="tx-list mt">' + h.pairwise.map(function (t) {
+              return '<li><span class="who">' + esc(nameOf(t.from)) + ' → ' + esc(nameOf(t.to)) +
+                '</span><span class="amt">' + won(t.amount) + '</span></li>';
+            }).join('') + '</ul>' +
+          '</details>' +
+        '</div>' +
 
-      '<div class="next-mult">' +
-        '<span class="x">×' + nextMult + '</span>' +
-        '<span>' + (isFinal ? '마지막 홀입니다' : '다음 홀 배율 · ' + esc((h.nextNotes || []).join(' · '))) + '</span>' +
-      '</div>' +
+        '<div class="next-mult">' +
+          '<span class="x">×' + nextMult + '</span>' +
+          '<span>' + (isFinal ? '마지막 홀입니다' : '다음 홀 배율 · ' + esc((h.nextNotes || []).join(' · '))) + '</span>' +
+        '</div>') +
 
-      '<div class="card mt">' +
-        '<div class="bold" style="margin-bottom:6px">누적 현황</div>' +
-        '<table class="data"><thead><tr><th>선수</th><th class="num">누적</th><th class="num">타수</th></tr></thead>' +
-        '<tbody>' + totalsRows + '</tbody></table>' +
-      '</div>' +
+      (resTeamOnly ? '' :
+        '<div class="card mt">' +
+          '<div class="bold" style="margin-bottom:6px">누적 현황</div>' +
+          '<table class="data"><thead><tr><th>선수</th><th class="num">누적</th><th class="num">타수</th></tr></thead>' +
+          '<tbody>' + totalsRows + '</tbody></table>' +
+        '</div>') +
 
       teamResCard +
 
@@ -800,21 +844,23 @@ var App = (function () {
     var v = R;
     var reading = S.reading;
     var mode = v.mode;
+    var sumTeamOnly = YDC.isTeamOnlyMode(mode);
     var ranked = v.players.map(function (p, i) {
       return {
         uid: p.uid, name: p.name, points: p.points, net: p.net,
         adj: v.roundEnd.adjust[p.uid] || 0, final: v.roundEnd.finalNet[i]
       };
-    }).sort(function (a, b) { return b.final - a.final; });
+    }).sort(function (a, b) { return sumTeamOnly ? (a.points - b.points) : (b.final - a.final); });
 
     var rankRows = ranked.map(function (p, i) {
       return '<tr>' +
         '<td class="num" style="width:28px;color:var(--muted)">' + (i + 1) + '</td>' +
         '<td>' + esc(p.name) + '</td>' +
         '<td class="num">' + (p.points > 0 ? '+' + p.points : p.points) + '</td>' +
-        (mode === 'ydc' ? '<td class="num ' + netClass(p.net) + '">' + (p.net ? signed(p.net) : '–') + '</td>' : '') +
-        (mode === 'ydc' ? '<td class="num ' + netClass(p.adj) + '">' + (p.adj ? signed(p.adj) : '–') + '</td>' : '') +
-        '<td class="num ' + netClass(p.final) + '"><b>' + signed(p.final) + '</b></td>' +
+        (sumTeamOnly ? '' :
+          (mode === 'ydc' ? '<td class="num ' + netClass(p.net) + '">' + (p.net ? signed(p.net) : '–') + '</td>' : '') +
+          (mode === 'ydc' ? '<td class="num ' + netClass(p.adj) + '">' + (p.adj ? signed(p.adj) : '–') + '</td>' : '') +
+          '<td class="num ' + netClass(p.final) + '"><b>' + signed(p.final) + '</b></td>') +
       '</tr>';
     }).join('');
 
@@ -886,29 +932,29 @@ var App = (function () {
     return header() +
       '<div class="page-title">' + esc((v.round.title || '').trim() || '라운드 결과') + '</div>' +
       '<div class="small muted" style="margin:-8px 2px 12px">' + modeLabel(mode) + ' · ' + v.holeCount + '/' + v.totalHoles +
-        '홀 · 기본 ' + won(v.baseBet) + '/타 · ' + todayLabel(v.round.createdAt) + '</div>' +
+        '홀' + (sumTeamOnly ? '' : ' · 기본 ' + won(v.baseBet) + '/타') + ' · ' + todayLabel(v.round.createdAt) + '</div>' +
+
+      (sumTeamOnly ? teamSummaryCard : '') +
 
       '<div class="card">' +
         '<table class="data compact">' +
           '<thead><tr><th></th><th>선수</th><th class="num">타수</th>' +
-            (mode === 'ydc' ? '<th class="num">홀</th><th class="num">돌려주기</th>' : '') +
-            '<th class="num">최종</th></tr></thead>' +
+            (sumTeamOnly ? '' :
+              (mode === 'ydc' ? '<th class="num">홀</th><th class="num">돌려주기</th>' : '') +
+              '<th class="num">최종</th>') + '</tr></thead>' +
           '<tbody>' + rankRows + '</tbody>' +
         '</table>' +
         (mode === 'ydc' ? '<div class="tiny muted mt">최종 = 홀 정산 + 돌려주기 (타수 적은 사람이 많은 사람에게 타수 차 × 기본 배팅)</div>' : '') +
       '</div>' +
 
-      returnCard +
-
-      teamSummaryCard +
-
-      '<div class="card">' +
-        '<div class="bold" style="margin-bottom:4px">' + (mode === 'ydc' ? '최종 정산 (돌려준 후)' : '최종 정산') + '</div>' +
-        (mode === 'ydc' ? '<div class="tiny muted" style="margin-bottom:8px">홀 정산과 타수 차이 돌려주기를 모두 합산한 최종 금액입니다.</div>' : '') +
-        txList(settleRows) +
-        '<div class="print-line"></div>' +
-        '<div class="small">받을 돈 합계 <b class="pos">' + won(receive) + '</b> · 줄 돈 합계 <b class="neg">' + won(pay) + '</b></div>' +
-      '</div>' +
+      (sumTeamOnly ? '' : returnCard + teamSummaryCard +
+        '<div class="card">' +
+          '<div class="bold" style="margin-bottom:4px">' + (mode === 'ydc' ? '최종 정산 (돌려준 후)' : '최종 정산') + '</div>' +
+          (mode === 'ydc' ? '<div class="tiny muted" style="margin-bottom:8px">홀 정산과 타수 차이 돌려주기를 모두 합산한 최종 금액입니다.</div>' : '') +
+          txList(settleRows) +
+          '<div class="print-line"></div>' +
+          '<div class="small">받을 돈 합계 <b class="pos">' + won(receive) + '</b> · 줄 돈 합계 <b class="neg">' + won(pay) + '</b></div>' +
+        '</div>') +
 
       '<div class="card">' +
         '<details><summary class="bold">홀별 기록 (' + v.holeCount + '홀)</summary>' +
@@ -1001,11 +1047,11 @@ var App = (function () {
       if (uniq[names[i]]) { toast('이름이 겹칩니다: ' + names[i]); return; }
       uniq[names[i]] = true;
     }
-    var baseBet = Math.max(0, Math.round(Number(cfg.baseBet) || 0));
-    if (baseBet <= 0) { toast('기본 배팅을 입력하세요'); return; }
+    var baseBet = YDC.isTeamOnlyMode(cfg.mode) ? 0 : Math.max(0, Math.round(Number(cfg.baseBet) || 0));
+    if (!YDC.isTeamOnlyMode(cfg.mode) && baseBet <= 0) { toast('기본 배팅을 입력하세요'); return; }
 
     var teamPlayCfg = null;
-    if (cfg.mode === 'ydc' && cfg.count === 4 && cfg.teamPlay && cfg.teamPlay.enabled) {
+    if (YDC.isTeamOnlyMode(cfg.mode) || (cfg.mode === 'ydc' && cfg.count === 4 && cfg.teamPlay && cfg.teamPlay.enabled)) {
       var ts = cfg.teamPlay.teams || ['A', 'A', 'B', 'B'];
       var cntA = ts.filter(function (t) { return t !== 'B'; }).length;
       if (cntA !== 2) { toast('팀플레이는 A팀 2명, B팀 2명으로 나누어야 합니다'); return; }
@@ -1597,6 +1643,7 @@ var App = (function () {
       /* 설정 */
       case 'setup:mode':
         S.setup.mode = el.getAttribute('data-mode');
+        if (YDC.isTeamOnlyMode(S.setup.mode)) S.setup.count = 4;
         render();
         return;
       case 'setup:count': {

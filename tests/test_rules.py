@@ -414,6 +414,25 @@ check('2홀 합산 아폴론 승', v23['holes'][1]['teamResult']['winner'], 'B')
 check('2홀 ruleType=sum', v23['holes'][1]['teamResult']['ruleType'], 'sum')
 check('2홀 후 1:1 동점', (v23['teamMatch']['scoreA'], v23['teamMatch']['scoreB']), (1, 1))
 
+# 단독 팀플레이 모드 (돈 내기 없음)
+r24 = build(mode='team', base=0, holes=18)
+r24['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'nameA': '포세이돈', 'nameB': '아레스', 'adjA': 0, 'adjB': 0}
+add_hole(r24, 1, [-1, 0, 0, 1])
+v24 = view(r24)
+check('단독 팀플레이 돈 0', sum(abs(p['net']) for p in v24['players']), 0)
+check('단독 팀플레이 포세이돈 1점', v24['teamMatch']['scoreA'], 1)
+
+# 업다운 팀플레이 모드 (잘친 1점 + 못친 1점, 지는 팀 1명 버디 2점, 2명 다 버디 4점)
+r25 = build(mode='updown', base=0, holes=18)
+r25['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'nameA': '제우스', 'nameB': '아폴론', 'adjA': 0, 'adjB': 0}
+add_hole(r25, 1, [0, 0, 1, 1])     # A +2 (잘친1 + 못친1) -> A 2 : B 0
+add_hole(r25, 2, [0, 1, -1, 2])    # B 지는 팀에서 1명 버디(-1) -> 잘친(B) 2점, 못친(A 1 < B 2) 1점 -> A 3 : B 2
+add_hole(r25, 3, [0, 0, -1, -1])   # B 지는 팀에서 2명 다 버디 -> B 4점 -> A 3 : B 6
+v25 = view(r25)
+check('업다운 1홀 후 2:0', (v25['holes'][0]['teamResult']['scoreA'], v25['holes'][0]['teamResult']['scoreB']), (2, 0))
+check('업다운 2홀(1명 버디) 후 3:2', (v25['holes'][1]['teamResult']['scoreA'], v25['holes'][1]['teamResult']['scoreB']), (3, 2))
+check('업다운 3홀(2명 버디) 후 3:6', (v25['teamMatch']['scoreA'], v25['teamMatch']['scoreB']), (3, 6))
+
 # ---------------------------------------------------------------- 결과
 print('통과 %d / 실패 %d' % (len(PASS), len(FAIL)))
 if FAIL:

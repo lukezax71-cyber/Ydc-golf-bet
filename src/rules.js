@@ -10,7 +10,8 @@ var YDC = (function () {
 
   var VERSION = '1.0.0';
 
-  var MODE = { YDC: 'ydc', OJANG: 'ojang' };
+  var MODE = { YDC: 'ydc', OJANG: 'ojang', TEAM: 'team', UPDOWN: 'updown' };
+  function isTeamOnlyMode(m) { return m === MODE.TEAM || m === MODE.UPDOWN; }
   var SCORE_MIN = -3;
   var SCORE_MAX = 5;
 
@@ -253,9 +254,9 @@ var YDC = (function () {
 
   function normalizeRound(round) {
     var r = round || {};
-    var mode = r.mode === MODE.OJANG ? MODE.OJANG : MODE.YDC;
+    var mode = (r.mode === MODE.OJANG || r.mode === MODE.TEAM || r.mode === MODE.UPDOWN) ? r.mode : MODE.YDC;
     var totalHoles = Math.max(1, Math.round(num(r.totalHoles) || 18));
-    var baseBet = Math.max(0, Math.round(num(r.baseBet)));
+    var baseBet = isTeamOnlyMode(mode) ? 0 : Math.max(0, Math.round(num(r.baseBet)));
 
     var initialPlayers = [];
     var seen = {};
@@ -532,9 +533,10 @@ var YDC = (function () {
       return { from: players[t.from].uid, to: players[t.to].uid, amount: t.amount };
     });
 
-    // ---- YDC 모드 2:2 팀플레이 계산 ----
+    // ---- YDC 팀플레이 / 단독 팀플레이 / 업다운 팀플레이 계산 ----
     var teamMatch = null;
-    if (mode === MODE.YDC && r.teamPlay && r.teamPlay.enabled && players.length === 4 && r.teamPlay.teamOf) {
+    var teamEnabled = (mode === MODE.YDC && r.teamPlay && r.teamPlay.enabled) || isTeamOnlyMode(mode);
+    if (teamEnabled && r.teamPlay && players.length === 4 && r.teamPlay.teamOf) {
       var teamOf = r.teamPlay.teamOf;
       var teamA = players.filter(function (p) { return teamOf[p.uid] === 'A'; }).map(function (p) { return p.uid; });
       var teamB = players.filter(function (p) { return teamOf[p.uid] === 'B'; }).map(function (p) { return p.uid; });
@@ -544,18 +546,24 @@ var YDC = (function () {
         var scoreA = adjA, scoreB = adjB;
         var clinchedEarly = null, clinchedAtHole = null;
         var preFinalLead = null;
+        var isUpdown = (mode === MODE.UPDOWN);
+
+        function holeMaxPts(hh) {
+          return isUpdown ? 2 : teamHolePoints(hh, r.totalHoles);
+        }
 
         function remAfterHole(hh) {
           var s = 0;
-          for (var k = hh + 1; k <= r.totalHoles; k++) s += teamHolePoints(k, r.totalHoles);
+          for (var k = hh + 1; k <= r.totalHoles; k++) s += holeMaxPts(k);
           return s;
         }
 
         holes.forEach(function (h) {
-          var ptsNow = teamHolePoints(h.hole, r.totalHoles);
+          var ptsNow = holeMaxPts(h.hole);
           var remAfter = remAfterHole(h.hole);
           var diffBefore = Math.abs(scoreA - scoreB);
           var leaderBefore = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
+          var trailingBefore = scoreA < scoreB ? 'A' : scoreB < scoreA ? 'B' : null;
           var wasDormie = (!clinchedEarly && h.hole < r.totalHoles && leaderBefore !== null &&
             diffBefore > remAfter && diffBefore <= ptsNow + remAfter);
           if (h.hole === r.totalHoles) preFinalLead = leaderBefore;
@@ -564,16 +572,46 @@ var YDC = (function () {
           h.uids.forEach(function (u, idx) { sMap[u] = h.scores[idx]; });
           var a1 = sMap[teamA[0]] || 0, a2 = sMap[teamA[1]] || 0;
           var b1 = sMap[teamB[0]] || 0, b2 = sMap[teamB[1]] || 0;
-          var isOdd = (h.hole % 2 === 1);
-          var sumA = isOdd ? Math.min(a1, a2) : (a1 + a2);
-          var sumB = isOdd ? Math.min(b1, b2) : (b1 + b2);
-          var hWinner = sumA < sumB ? 'A' : sumB < sumA ? 'B' : null;
+
+          var gainA = 0, gainB = 0;
+          var hWinner = null;
           var manualTeam = false;
-          if (h.teamOverride === 'A') { hWinner = 'A'; manualTeam = true; }
-          else if (h.teamOverride === 'B') { hWinner = 'B'; manualTeam = true; }
-          else if (h.teamOverride === 'tie') { hWinner = null; manualTeam = true; }
-          if (hWinner === 'A') scoreA += ptsNow;
-          else if (hWinner === 'B') scoreB += ptsNow;
+          var sumA, sumB, isOdd = (h.hole % 2 === 1);
+          var bestA = Math.min(a1, a2), bestB = Math.min(b1, b2);
+          var worstA = Math.max(a1, a2), worstB = Math.max(b1, b2);
+
+          if (isUpdown) {
+            sumA = bestA; sumB = bestB;
+            if (h.teamOverride === 'A') { gainA = 2; hWinner = 'A'; manualTeam = true; }
+            else if (h.teamOverride === 'B') { gainB = 2; hWinner = 'B'; manualTeam = true; }
+            else if (h.teamOverride === 'tie') { hWinner = null; manualTeam = true; }
+            else {
+              var birdA = (a1 <= -1 ? 1 : 0) + (a2 <= -1 ? 1 : 0);
+              var birdB = (b1 <= -1 ? 1 : 0) + (b2 <= -1 ? 1 : 0);
+              if (bestA < bestB) {
+                gainA += (trailingBefore === 'A' && birdA >= 1) ? 2 : 1;
+              } else if (bestB < bestA) {
+                gainB += (trailingBefore === 'B' && birdB >= 1) ? 2 : 1;
+              }
+              if (worstA < worstB) {
+                gainA += (trailingBefore === 'A' && birdA >= 2) ? 2 : 1;
+              } else if (worstB < worstA) {
+                gainB += (trailingBefore === 'B' && birdB >= 2) ? 2 : 1;
+              }
+              hWinner = gainA > gainB ? 'A' : gainB > gainA ? 'B' : null;
+            }
+            scoreA += gainA;
+            scoreB += gainB;
+          } else {
+            sumA = isOdd ? bestA : (a1 + a2);
+            sumB = isOdd ? bestB : (b1 + b2);
+            hWinner = sumA < sumB ? 'A' : sumB < sumA ? 'B' : null;
+            if (h.teamOverride === 'A') { hWinner = 'A'; manualTeam = true; }
+            else if (h.teamOverride === 'B') { hWinner = 'B'; manualTeam = true; }
+            else if (h.teamOverride === 'tie') { hWinner = null; manualTeam = true; }
+            if (hWinner === 'A') { gainA = ptsNow; scoreA += ptsNow; }
+            else if (hWinner === 'B') { gainB = ptsNow; scoreB += ptsNow; }
+          }
 
           var diffAfter = Math.abs(scoreA - scoreB);
           var leaderAfter = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
@@ -585,10 +623,14 @@ var YDC = (function () {
           }
 
           h.teamResult = {
-            ruleType: isOdd ? 'best' : 'sum',
+            ruleType: isUpdown ? 'updown' : (isOdd ? 'best' : 'sum'),
             sumA: sumA,
             sumB: sumB,
-            pts: ptsNow,
+            worstA: worstA,
+            worstB: worstB,
+            gainA: gainA,
+            gainB: gainB,
+            pts: isUpdown ? Math.max(gainA, gainB) : ptsNow,
             winner: hWinner,
             manual: manualTeam,
             scoreA: scoreA,
@@ -599,7 +641,7 @@ var YDC = (function () {
         });
 
         var curHole = finished ? r.totalHoles : nextHole;
-        var curPts = teamHolePoints(curHole, r.totalHoles);
+        var curPts = holeMaxPts(curHole);
         var curRemAfter = remAfterHole(curHole);
         var diffCur = Math.abs(scoreA - scoreB);
         var leaderCur = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
@@ -641,7 +683,7 @@ var YDC = (function () {
           clinchedEarly: clinchedEarly,
           clinchedAtHole: clinchedAtHole,
           nextPts: curPts,
-          nextRuleType: (curHole % 2 === 1) ? 'best' : 'sum',
+          nextRuleType: isUpdown ? 'updown' : ((curHole % 2 === 1) ? 'best' : 'sum'),
           nextIsDormie: nextIsDormie,
           dormieLeader: nextIsDormie ? leaderCur : null,
           dormieTrailing: nextIsDormie ? (leaderCur === 'A' ? 'B' : 'A') : null,
@@ -713,41 +755,46 @@ var YDC = (function () {
     var nameOf = {};
     view.players.forEach(function (p) { nameOf[p.uid] = p.name; });
 
-    var modeLabel = view.mode === MODE.OJANG ? '오장 모드' : 'YDC 모드';
+    var modeLabel = view.mode === MODE.OJANG ? '오장 모드'
+      : view.mode === MODE.TEAM ? '팀플레이'
+      : view.mode === MODE.UPDOWN ? '업다운 팀플레이'
+      : 'YDC 모드';
     var lines = [];
     var title = (r.title || '').trim() || ('YDC 골프 내기 · ' + modeLabel);
     lines.push('⛳ ' + title);
-    lines.push(modeLabel + ' · ' + view.totalHoles + '홀 · 기본 ' + won(view.baseBet) + '/타');
+    lines.push(modeLabel + ' · ' + view.totalHoles + '홀' + (isTeamOnlyMode(view.mode) ? '' : ' · 기본 ' + won(view.baseBet) + '/타'));
     lines.push('');
 
-    // 최종 순위 (최종 정산액 기준)
-    var ranked = view.players.map(function (p, i) {
-      return { name: p.name, net: p.net, adj: view.roundEnd.adjust[p.uid] || 0, final: view.roundEnd.finalNet[i], points: p.points };
-    }).sort(function (a, b) { return b.final - a.final; });
+    if (!isTeamOnlyMode(view.mode)) {
+      // 최종 순위 (최종 정산액 기준)
+      var ranked = view.players.map(function (p, i) {
+        return { name: p.name, net: p.net, adj: view.roundEnd.adjust[p.uid] || 0, final: view.roundEnd.finalNet[i], points: p.points };
+      }).sort(function (a, b) { return b.final - a.final; });
 
-    lines.push('■ 최종 결과');
-    ranked.forEach(function (p, i) {
-      var sign = p.final > 0 ? '+' : p.final < 0 ? '-' : '';
-      lines.push((i + 1) + '. ' + p.name + '  ' + p.points + '타  ' + sign + won(Math.abs(p.final)));
-    });
-    lines.push('');
-
-    if (view.mode === MODE.YDC && view.roundEnd.rows.length) {
-      lines.push('■ 타수 차이 돌려주기');
-      view.roundEnd.rows.forEach(function (t) {
-        lines.push(nameOf[t.from] + ' → ' + nameOf[t.to] + ': ' + won(t.amount) + ' (' + t.diff + '타 차)');
+      lines.push('■ 최종 결과');
+      ranked.forEach(function (p, i) {
+        var sign = p.final > 0 ? '+' : p.final < 0 ? '-' : '';
+        lines.push((i + 1) + '. ' + p.name + '  ' + p.points + '타  ' + sign + won(Math.abs(p.final)));
       });
       lines.push('');
-    }
 
-    // 정산 내역
-    lines.push(view.mode === MODE.YDC ? '■ 최종 정산 (돌려준 후)' : '■ 정산');
-    if (view.roundEnd.settlements.length === 0) {
-      lines.push('정산할 금액이 없습니다.');
-    } else {
-      view.roundEnd.settlements.forEach(function (t) {
-        lines.push(nameOf[t.from] + ' → ' + nameOf[t.to] + ': ' + won(t.amount));
-      });
+      if (view.mode === MODE.YDC && view.roundEnd.rows.length) {
+        lines.push('■ 타수 차이 돌려주기');
+        view.roundEnd.rows.forEach(function (t) {
+          lines.push(nameOf[t.from] + ' → ' + nameOf[t.to] + ': ' + won(t.amount) + ' (' + t.diff + '타 차)');
+        });
+        lines.push('');
+      }
+
+      // 정산 내역
+      lines.push(view.mode === MODE.YDC ? '■ 최종 정산 (돌려준 후)' : '■ 정산');
+      if (view.roundEnd.settlements.length === 0) {
+        lines.push('정산할 금액이 없습니다.');
+      } else {
+        view.roundEnd.settlements.forEach(function (t) {
+          lines.push(nameOf[t.from] + ' → ' + nameOf[t.to] + ': ' + won(t.amount));
+        });
+      }
     }
 
     if (opts.includeHoles && view.holes.length) {
@@ -775,16 +822,19 @@ var YDC = (function () {
       }
     }
 
-    var receive = 0, pay = 0;
-    view.roundEnd.finalNet.forEach(function (v) { if (v > 0) receive += v; else pay += -v; });
-    lines.push('');
-    lines.push('받을 돈 합계 ' + won(receive) + ' / 줄 돈 합계 ' + won(pay));
+    if (!isTeamOnlyMode(view.mode)) {
+      var receive = 0, pay = 0;
+      view.roundEnd.finalNet.forEach(function (v) { if (v > 0) receive += v; else pay += -v; });
+      lines.push('');
+      lines.push('받을 돈 합계 ' + won(receive) + ' / 줄 돈 합계 ' + won(pay));
+    }
     return lines.join('\n');
   }
 
   return {
     VERSION: VERSION,
     MODE: MODE,
+    isTeamOnlyMode: isTeamOnlyMode,
     SCORE_MIN: SCORE_MIN,
     SCORE_MAX: SCORE_MAX,
     underParUnits: underParUnits,
