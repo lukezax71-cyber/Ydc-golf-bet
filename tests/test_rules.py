@@ -355,6 +355,53 @@ text = ctx.eval('YDC.buildShareText(YDC.recomputeRound(__R3), {includeHoles: tru
 for piece in ['YDC 모드', '최종 결과', '정산', '받을 돈 합계', '홀별 배율']:
     check('공유 문구에 "%s"' % piece, piece in text, True)
 
+# --------------------------------------------------------------- 팀플레이 (2:2)
+r21 = build(holes=18)
+r21['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'adjA': 0, 'adjB': 0}
+# 1~9홀: A팀 승 (각 1점 -> 9:0), 10~13홀: B팀 승 (각 2점 -> 9:8)
+for h in range(1, 10):
+    add_hole(r21, h, [0, 0, 1, 0])
+for h in range(10, 14):
+    add_hole(r21, h, [1, 0, 0, 0])
+v21 = view(r21)
+check('팀플레이 13홀 후 A 9점', v21['teamMatch']['scoreA'], 9)
+check('팀플레이 13홀 후 B 8점', v21['teamMatch']['scoreB'], 8)
+check('14홀 도미 아님', v21['teamMatch']['nextIsDormie'], False)
+
+# 14~16홀: A팀 승 (각 2점 -> 15:8, 7점 차). 17홀(2점) + 18홀(4점) = 6점 < 7점 -> 16홀 후 조기 종료 확정!
+for h in range(14, 17):
+    add_hole(r21, h, [0, 0, 1, 0])
+v21b = view(r21)
+check('팀플레이 16홀 후 A 15점', v21b['teamMatch']['scoreA'], 15)
+check('팀플레이 조기 종료 A팀 확정', v21b['teamMatch']['clinchedEarly'], 'A')
+check('팀플레이 최종 우승 A팀', v21b['teamMatch']['finalWinner'], 'A')
+
+# 18홀 동점 역전승 (지다가 비김): 17홀까지 A 10 : B 6 (4점 차), 18홀(4점) B 승리 -> 10:10 동점 -> B팀 승!
+r22 = build(holes=18)
+r22['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'adjA': 0, 'adjB': 0}
+for h in range(1, 5):
+    add_hole(r22, h, [0, 0, 1, 0])  # A +4
+for h in range(5, 10):
+    add_hole(r22, h, [0, 0, 0, 0])  # 무
+for h in range(10, 13):
+    add_hole(r22, h, [0, 0, 1, 0])  # A +6 -> A 10 : B 0
+for h in range(13, 16):
+    add_hole(r22, h, [1, 0, 0, 0])  # B +6 -> A 10 : B 6
+for h in range(16, 18):
+    add_hole(r22, h, [0, 0, 0, 0])  # 무 -> 17홀 후 A 10 : B 6
+v22_pre = view(r22)
+check('17홀 후 4점 차 도미 아님(18홀 4점)', v22_pre['teamMatch']['nextIsDormie'], False)
+add_hole(r22, 18, [1, 0, 0, 0])  # B +4 -> 10:10 동점!
+v22 = view(r22)
+check('18홀 후 10:10 동점', (v22['teamMatch']['scoreA'], v22['teamMatch']['scoreB']), (10, 10))
+check('지다가 비긴 B팀 최종 승', v22['teamMatch']['finalWinner'], 'B')
+
+# 누적 점수 조정 (adjA / adjB)
+r22['teamPlay']['adjA'] = 1
+v22_adj = view(r22)
+check('팀 점수 수동 조정 A +1 -> 11점', v22_adj['teamMatch']['scoreA'], 11)
+check('조정 후 A팀 최종 승', v22_adj['teamMatch']['finalWinner'], 'A')
+
 # ---------------------------------------------------------------- 결과
 print('통과 %d / 실패 %d' % (len(PASS), len(FAIL)))
 if FAIL:

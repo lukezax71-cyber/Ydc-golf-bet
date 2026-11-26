@@ -1110,11 +1110,22 @@ var YDC = (function () {
         uids: uids,
         scores: scores,
         doubleBy: e.doubleBy ? String(e.doubleBy) : null,
+        teamOverride: (e.teamOverride === 'A' || e.teamOverride === 'B' || e.teamOverride === 'tie') ? e.teamOverride : null,
         sides: e.sides || {},
         note: e.note || ''
       });
     });
     history.sort(function (a, b) { return a.hole - b.hole; });
+
+    var teamPlay = null;
+    if (r.teamPlay && r.teamPlay.enabled && r.teamPlay.teamOf) {
+      teamPlay = {
+        enabled: true,
+        teamOf: r.teamPlay.teamOf,
+        adjA: Math.round(num(r.teamPlay.adjA)),
+        adjB: Math.round(num(r.teamPlay.adjB))
+      };
+    }
 
     return {
       id: String(r.id || ''),
@@ -1125,6 +1136,7 @@ var YDC = (function () {
       createdAt: r.createdAt || null,
       finishedAt: r.finishedAt || null,
       initialPlayers: initialPlayers,
+      teamPlay: teamPlay,
       sideConfig: sideConfig,
       history: history
     };
@@ -1134,6 +1146,12 @@ var YDC = (function () {
    * history 와 initialPlayers 만으로 라운드 전체를 다시 계산한다.
    * net, points, 남은 더블, 이월 횟수, 오너 순서, 모든 이체 내역이 여기서 나온다.
    */
+  function teamHolePoints(hole, totalHoles) {
+    if (hole <= 9) return 1;
+    if (totalHoles === 18 && hole === 18) return 4;
+    return 2;
+  }
+
   function recomputeRound(round) {
     var r = normalizeRound(round);
     var mode = r.mode;
@@ -1320,6 +1338,118 @@ var YDC = (function () {
       return { from: players[t.from].uid, to: players[t.to].uid, amount: t.amount };
     });
 
+    // ---- YDC 모드 2:2 팀플레이 계산 ----
+    var teamMatch = null;
+    if (mode === MODE.YDC && r.teamPlay && r.teamPlay.enabled && players.length === 4 && r.teamPlay.teamOf) {
+      var teamOf = r.teamPlay.teamOf;
+      var teamA = players.filter(function (p) { return teamOf[p.uid] === 'A'; }).map(function (p) { return p.uid; });
+      var teamB = players.filter(function (p) { return teamOf[p.uid] === 'B'; }).map(function (p) { return p.uid; });
+      if (teamA.length === 2 && teamB.length === 2) {
+        var adjA = Number(r.teamPlay.adjA || 0);
+        var adjB = Number(r.teamPlay.adjB || 0);
+        var scoreA = adjA, scoreB = adjB;
+        var clinchedEarly = null, clinchedAtHole = null;
+        var preFinalLead = null;
+
+        function remAfterHole(hh) {
+          var s = 0;
+          for (var k = hh + 1; k <= r.totalHoles; k++) s += teamHolePoints(k, r.totalHoles);
+          return s;
+        }
+
+        holes.forEach(function (h) {
+          var ptsNow = teamHolePoints(h.hole, r.totalHoles);
+          var remAfter = remAfterHole(h.hole);
+          var diffBefore = Math.abs(scoreA - scoreB);
+          var leaderBefore = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
+          var wasDormie = (!clinchedEarly && h.hole < r.totalHoles && leaderBefore !== null &&
+            diffBefore > remAfter && diffBefore <= ptsNow + remAfter);
+          if (h.hole === r.totalHoles) preFinalLead = leaderBefore;
+
+          var sMap = {};
+          h.uids.forEach(function (u, idx) { sMap[u] = h.scores[idx]; });
+          var sumA = (sMap[teamA[0]] || 0) + (sMap[teamA[1]] || 0);
+          var sumB = (sMap[teamB[0]] || 0) + (sMap[teamB[1]] || 0);
+          var hWinner = sumA < sumB ? 'A' : sumB < sumA ? 'B' : null;
+          var manualTeam = false;
+          if (h.teamOverride === 'A') { hWinner = 'A'; manualTeam = true; }
+          else if (h.teamOverride === 'B') { hWinner = 'B'; manualTeam = true; }
+          else if (h.teamOverride === 'tie') { hWinner = null; manualTeam = true; }
+          if (hWinner === 'A') scoreA += ptsNow;
+          else if (hWinner === 'B') scoreB += ptsNow;
+
+          var diffAfter = Math.abs(scoreA - scoreB);
+          var leaderAfter = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
+          var clinchedNow = false;
+          if (!clinchedEarly && h.hole < r.totalHoles && leaderAfter !== null && diffAfter > remAfter) {
+            clinchedEarly = leaderAfter;
+            clinchedAtHole = h.hole;
+            clinchedNow = true;
+          }
+
+          h.teamResult = {
+            sumA: sumA,
+            sumB: sumB,
+            pts: ptsNow,
+            winner: hWinner,
+            manual: manualTeam,
+            scoreA: scoreA,
+            scoreB: scoreB,
+            wasDormie: wasDormie,
+            clinchedNow: clinchedNow
+          };
+        });
+
+        var curHole = finished ? r.totalHoles : nextHole;
+        var curPts = teamHolePoints(curHole, r.totalHoles);
+        var curRemAfter = remAfterHole(curHole);
+        var diffCur = Math.abs(scoreA - scoreB);
+        var leaderCur = scoreA > scoreB ? 'A' : scoreB > scoreA ? 'B' : null;
+        var nextIsDormie = (!finished && !clinchedEarly && curHole < r.totalHoles && leaderCur !== null &&
+          diffCur > curRemAfter && diffCur <= curPts + curRemAfter);
+
+        var finalWinner = null, winReason = '';
+        if (holes.length) {
+          if (scoreA > scoreB) {
+            finalWinner = 'A';
+            winReason = clinchedEarly ? (clinchedAtHole + '홀 조기 종료 승리') : '점수 우세 승리';
+          } else if (scoreB > scoreA) {
+            finalWinner = 'B';
+            winReason = clinchedEarly ? (clinchedAtHole + '홀 조기 종료 승리') : '점수 우세 승리';
+          } else {
+            if (preFinalLead === 'A') {
+              finalWinner = 'B';
+              winReason = '마지막 홀 동점 역전승 (지다가 비김)';
+            } else if (preFinalLead === 'B') {
+              finalWinner = 'A';
+              winReason = '마지막 홀 동점 역전승 (지다가 비김)';
+            } else {
+              finalWinner = null;
+              winReason = '무승부';
+            }
+          }
+        }
+
+        teamMatch = {
+          teamA: teamA,
+          teamB: teamB,
+          teamOf: teamOf,
+          adjA: adjA,
+          adjB: adjB,
+          scoreA: scoreA,
+          scoreB: scoreB,
+          clinchedEarly: clinchedEarly,
+          clinchedAtHole: clinchedAtHole,
+          nextPts: curPts,
+          nextIsDormie: nextIsDormie,
+          dormieLeader: nextIsDormie ? leaderCur : null,
+          dormieTrailing: nextIsDormie ? (leaderCur === 'A' ? 'B' : 'A') : null,
+          finalWinner: finalWinner,
+          winReason: winReason
+        };
+      }
+    }
+
     return {
       version: VERSION,
       round: r,
@@ -1335,6 +1465,7 @@ var YDC = (function () {
       teeOrderUids: teeOrder,
       sidePot: sidePot,
       lastHole: last,
+      teamMatch: teamMatch,
       roundEnd: {
         rows: roundEndRows,
         adjust: roundEndAdjust,
@@ -1427,6 +1558,21 @@ var YDC = (function () {
       lines.push(parts.join(' · '));
     }
 
+    if (view.teamMatch) {
+      var tm = view.teamMatch;
+      var namesA = tm.teamA.map(function (u) { return nameOf[u]; }).join('·');
+      var namesB = tm.teamB.map(function (u) { return nameOf[u]; }).join('·');
+      lines.push('');
+      lines.push('■ 팀플레이 (2:2)');
+      lines.push('A팀(' + namesA + ') ' + tm.scoreA + '점 vs ' + tm.scoreB + '점 B팀(' + namesB + ')');
+      if (tm.finalWinner) {
+        var winNames = tm.finalWinner === 'A' ? namesA : namesB;
+        lines.push('우승: ' + tm.finalWinner + '팀(' + winNames + ') · ' + tm.winReason);
+      } else {
+        lines.push('결과: 무승부');
+      }
+    }
+
     var receive = 0, pay = 0;
     view.roundEnd.finalNet.forEach(function (v) { if (v > 0) receive += v; else pay += -v; });
     lines.push('');
@@ -1454,6 +1600,7 @@ var YDC = (function () {
     sideUnit: sideUnit,
     teeOrderUids: teeOrderUids,
     normalizeRound: normalizeRound,
+    teamHolePoints: teamHolePoints,
     recomputeRound: recomputeRound,
     validateRound: validateRound,
     buildShareText: buildShareText
@@ -1977,6 +2124,11 @@ var App = (function () {
       totalHoles: prefs.totalHoles || 18,
       names: (prefs.names || []).slice(0, 4),
       shuffle: prefs.shuffle === false ? false : true,
+      teamPlay: {
+        enabled: !!(prefs.teamPlay && prefs.teamPlay.enabled),
+        teams: (prefs.teamPlay && prefs.teamPlay.teams && prefs.teamPlay.teams.length === 4)
+          ? prefs.teamPlay.teams.slice(0, 4) : ['A', 'A', 'B', 'B']
+      },
       side: {
         nearest: { enabled: false, holes: [null, null, null, null] },
         longest: { enabled: false, holes: [null, null, null, null] }
@@ -2033,6 +2185,35 @@ var App = (function () {
       '</div>';
     }).join('');
 
+    var teamBlock = '';
+    if (cfg.mode === 'ydc' && cfg.count === 4) {
+      var tp = cfg.teamPlay || (cfg.teamPlay = { enabled: false, teams: ['A', 'A', 'B', 'B'] });
+      var teamRows = '';
+      if (tp.enabled) {
+        teamRows = '<div class="mt">' + [0, 1, 2, 3].map(function (idx) {
+          var nm = (names[idx] || '').trim() || ((idx + 1) + '번 선수');
+          var t = tp.teams[idx] === 'B' ? 'B' : 'A';
+          return '<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line)">' +
+            '<span class="small bold">' + esc(nm) + '</span>' +
+            '<div class="seg" style="width:140px">' +
+              '<button data-act="setup:team-pick" data-idx="' + idx + '" data-team="A" class="' + (t === 'A' ? 'on' : '') + '">A팀</button>' +
+              '<button data-act="setup:team-pick" data-idx="' + idx + '" data-team="B" class="' + (t === 'B' ? 'on' : '') + '">B팀</button>' +
+            '</div>' +
+          '</div>';
+        }).join('') + '</div>' +
+        '<div class="tiny muted mt">전반 1점 · 10~17홀 2점 · 18홀 4점 · 동점 시 지다가 비긴 팀 승 · 도미 홀 자동 표기</div>';
+      }
+      teamBlock = '<div class="section-label">팀플레이</div>' +
+        '<div class="card tight" style="margin-bottom:12px">' +
+          '<div class="switch-row">' +
+            '<div><div class="bold">2:2 팀플레이</div>' +
+            '<div class="tiny muted">두 명씩 팀을 나눠 합산 타수로 승패를 겨룹니다</div></div>' +
+            '<label class="switch"><input type="checkbox" data-act="setup:team-toggle"' + (tp.enabled ? ' checked' : '') + '><span></span></label>' +
+          '</div>' +
+          teamRows +
+        '</div>';
+    }
+
     var modeNote = cfg.mode === 'ojang'
       ? '언더파·+3 이상·최저타 동타가 나오면 다음 홀 ×2. 개인별 <b>더블 2회</b> 사용 가능(1홀 1회, 이미 2배면 사용 안 됨).'
       : '전원 파 ×10 · 전원 동타 ×5 · 스트레이트 ×5 · 3명 동타 ×3 · 2명 동타 ×2 · 언더파/+3 이상 ×2 중 <b>가장 큰 하나</b>만 적용.';
@@ -2082,6 +2263,8 @@ var App = (function () {
       '</div>' +
 
       '<div class="section-label">사이드 게임</div>' + sideBlock +
+
+      teamBlock +
 
       '<button class="btn btn-primary" data-act="setup:start" style="min-height:60px;font-size:1.1rem;margin-top:6px">라운드 시작</button>' +
       '<div style="height:16px"></div>';
@@ -2211,6 +2394,41 @@ var App = (function () {
     var pn = previewNet(pv, d, uids);
     draftSummary = '<div class="note mt" id="previewLine">' + previewLineHTML(uids, pn.net) + '</div>';
 
+    var teamBanner = '';
+    if (pv.teamMatch) {
+      var tm = pv.teamMatch;
+      var namesA = tm.teamA.map(nameOf).join('·');
+      var namesB = tm.teamB.map(nameOf).join('·');
+      var ov = d.teamOverride || 'auto';
+      var dormieHtml = '';
+      if (tm.clinchedEarly) {
+        var winN = tm.clinchedEarly === 'A' ? namesA : namesB;
+        dormieHtml = '<div class="note mt" style="background:rgba(247,187,7,.16);border-color:rgba(247,187,7,.5);font-weight:800">' +
+          '🏆 ' + tm.clinchedEarly + '팀(' + esc(winN) + ') 승리 확정 (조기 종료)</div>';
+      } else if (tm.nextIsDormie) {
+        var trN = tm.dormieTrailing === 'A' ? namesA : namesB;
+        dormieHtml = '<div class="note warn mt" style="font-weight:800">' +
+          '⚠️ 도미 홀 · ' + tm.dormieTrailing + '팀(' + esc(trN) + ')이 이 홀을 못 이기면 경기 조기 종료!</div>';
+      }
+      teamBanner = '<div class="card tight mt">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
+          '<div class="small bold">팀플레이 · 이번 홀 ' + tm.nextPts + '점' +
+            (tm.nextIsDormie ? ' <span class="tag" style="background:var(--gold);color:#111">도미 홀</span>' : '') + '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<div class="small bold">A(' + esc(namesA) + ') ' + tm.scoreA + ' : ' + tm.scoreB + ' B(' + esc(namesB) + ')</div>' +
+            '<button class="btn btn-ghost btn-sm" data-act="play:team-adj" style="min-height:30px;padding:4px 8px;font-size:.78rem">점수 조정</button>' +
+          '</div>' +
+        '</div>' +
+        dormieHtml +
+        '<div class="chips mt" style="margin-top:8px">' +
+          '<button data-act="play:team" data-v="auto" class="' + (ov === 'auto' ? 'on' : '') + '">자동(타수합)</button>' +
+          '<button data-act="play:team" data-v="A" class="' + (ov === 'A' ? 'on' : '') + '">A팀 승</button>' +
+          '<button data-act="play:team" data-v="B" class="' + (ov === 'B' ? 'on' : '') + '">B팀 승</button>' +
+          '<button data-act="play:team" data-v="tie" class="' + (ov === 'tie' ? 'on' : '') + '">무승부</button>' +
+        '</div>' +
+      '</div>';
+    }
+
     return header() +
       '<div class="hole-head">' +
         '<div class="hole-num">' +
@@ -2226,6 +2444,7 @@ var App = (function () {
         '</div>' +
       '</div>' +
       (sideNote ? sideNote : '') +
+      teamBanner +
       '<div class="mt">' + rows + '</div>' +
       draftSummary +
       '<div style="height:90px"></div>' +
@@ -2306,6 +2525,34 @@ var App = (function () {
         '<td class="num">' + (p.points > 0 ? '+' + p.points : p.points) + '</td></tr>';
     }).join('');
 
+    var teamResCard = '';
+    if (v.teamMatch && h.teamResult) {
+      var tm2 = v.teamMatch;
+      var tr = h.teamResult;
+      var nA = tm2.teamA.map(nameOf).join('·');
+      var nB = tm2.teamB.map(nameOf).join('·');
+      var resLine = tr.winner
+        ? '<b>' + tr.winner + '팀(' + esc(tr.winner === 'A' ? nA : nB) + ') +' + tr.pts + '점</b>' + (tr.manual ? ' (수동 수정)' : '')
+        : '<b>무승부 (0점)</b>' + (tr.manual ? ' (수동 수정)' : '');
+      var alertLine = '';
+      if (tr.clinchedNow) {
+        var cw = tm2.clinchedEarly === 'A' ? nA : nB;
+        alertLine = '<div class="note mt" style="background:rgba(247,187,7,.16);border-color:rgba(247,187,7,.5);font-weight:800">' +
+          '🏆 ' + tm2.clinchedEarly + '팀(' + esc(cw) + ') 승리 확정 · 경기가 조기 종료되었습니다!</div>';
+      } else if (!isFinal && tm2.nextIsDormie) {
+        var dt = tm2.dormieTrailing === 'A' ? nA : nB;
+        alertLine = '<div class="note warn mt" style="font-weight:800">' +
+          '⚠️ 다음 ' + (h.hole + 1) + '번 홀은 도미 홀입니다 (' + tm2.dormieTrailing + '팀 ' + esc(dt) + ' 패/무 시 조기 종료)</div>';
+      }
+      teamResCard = '<div class="card">' +
+        '<div class="bold" style="margin-bottom:6px">팀플레이 (' + tr.pts + '점 홀' + (tr.wasDormie ? ' · 도미 홀' : '') + ')</div>' +
+        '<div class="small">A팀(' + esc(nA) + ') 합 ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) +
+          ' vs B팀(' + esc(nB) + ') 합 ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' → ' + resLine + '</div>' +
+        '<div class="small muted mt">누적 점수: <b>A팀 ' + tr.scoreA + '</b> : <b>' + tr.scoreB + ' B팀</b></div>' +
+        alertLine +
+      '</div>';
+    }
+
     return header() +
       '<div class="card">' +
         '<div class="result-head">' +
@@ -2344,6 +2591,8 @@ var App = (function () {
         '<table class="data"><thead><tr><th>선수</th><th class="num">누적</th><th class="num">타수</th></tr></thead>' +
         '<tbody>' + totalsRows + '</tbody></table>' +
       '</div>' +
+
+      teamResCard +
 
       '<div class="btn-row">' +
         '<button class="btn btn-ghost" data-act="play:undo">홀 취소</button>' +
@@ -2411,7 +2660,9 @@ var App = (function () {
       return '<div class="history-row">' +
         '<div class="hole-badge">' + h.hole + '</div>' +
         '<div style="flex:1;min-width:0">' +
-          '<div class="small bold">×' + h.mult + (h.doubleBy ? ' (더블)' : '') + '</div>' +
+          '<div class="small bold">×' + h.mult + (h.doubleBy ? ' (더블)' : '') +
+            (h.teamResult ? ' · 팀 ' + (h.teamResult.winner ? h.teamResult.winner + '승(+' + h.teamResult.pts + ')' : '무') +
+              (h.teamResult.wasDormie ? ' [도미]' : '') : '') + '</div>' +
           '<div class="tiny muted" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + line + '</div>' +
         '</div>' +
         '<div class="tiny ' + (h.simplified.length ? 'muted' : '') + '">' +
@@ -2420,6 +2671,25 @@ var App = (function () {
           }).join('<br>') : '정산 없음') + '</div>' +
       '</div>';
     }).join('');
+
+    var teamSummaryCard = '';
+    if (v.teamMatch) {
+      var tm3 = v.teamMatch;
+      var nmA = tm3.teamA.map(nameOf).join(' · ');
+      var nmB = tm3.teamB.map(nameOf).join(' · ');
+      var winBanner = tm3.finalWinner
+        ? '<div class="note" style="background:rgba(247,187,7,.16);border-color:rgba(247,187,7,.5);font-weight:900;font-size:1rem;margin-bottom:10px">' +
+            '🏆 ' + tm3.finalWinner + '팀 (' + esc(tm3.finalWinner === 'A' ? nmA : nmB) + ') 최종 우승! · ' + esc(tm3.winReason) + '</div>'
+        : '<div class="note" style="font-weight:800;margin-bottom:10px">🤝 무승부</div>';
+      teamSummaryCard = '<div class="card">' +
+        '<div class="bold" style="margin-bottom:8px">2:2 팀플레이 결과</div>' +
+        winBanner +
+        '<ul class="tx-list">' +
+          '<li><span class="who">A팀 (' + esc(nmA) + ')</span><span class="amt">' + tm3.scoreA + '점</span></li>' +
+          '<li><span class="who">B팀 (' + esc(nmB) + ')</span><span class="amt">' + tm3.scoreB + '점</span></li>' +
+        '</ul>' +
+      '</div>';
+    }
 
     return header() +
       '<div class="page-title">' + esc((v.round.title || '').trim() || '라운드 결과') + '</div>' +
@@ -2437,6 +2707,8 @@ var App = (function () {
       '</div>' +
 
       returnCard +
+
+      teamSummaryCard +
 
       '<div class="card">' +
         '<div class="bold" style="margin-bottom:4px">' + (mode === 'ydc' ? '최종 정산 (돌려준 후)' : '최종 정산') + '</div>' +
@@ -2540,6 +2812,14 @@ var App = (function () {
     var baseBet = Math.max(0, Math.round(Number(cfg.baseBet) || 0));
     if (baseBet <= 0) { toast('기본 배팅을 입력하세요'); return; }
 
+    var teamPlayCfg = null;
+    if (cfg.mode === 'ydc' && cfg.count === 4 && cfg.teamPlay && cfg.teamPlay.enabled) {
+      var ts = cfg.teamPlay.teams || ['A', 'A', 'B', 'B'];
+      var cntA = ts.filter(function (t) { return t !== 'B'; }).length;
+      if (cntA !== 2) { toast('팀플레이는 A팀 2명, B팀 2명으로 나누어야 합니다'); return; }
+      teamPlayCfg = { enabled: true, teams: ts.slice(0, 4) };
+    }
+
     // 진행 중이던 라운드가 있으면 지우지 말고 보관함에 남긴다(데이터 유실 방지).
     if (S.round && (S.round.history || []).length) {
       var prev = S.round;
@@ -2547,7 +2827,16 @@ var App = (function () {
       Store.addToArchive(prev);
     }
 
-    var players = names.map(function (n) { return { uid: Store.newUid(), name: n }; });
+    var players = names.map(function (n, idx) {
+      return { uid: Store.newUid(), name: n, team: teamPlayCfg ? (teamPlayCfg.teams[idx] === 'B' ? 'B' : 'A') : null };
+    });
+
+    var teamPlayRound = null;
+    if (teamPlayCfg) {
+      var teamOf = {};
+      players.forEach(function (p) { teamOf[p.uid] = p.team; });
+      teamPlayRound = { enabled: true, teamOf: teamOf, adjA: 0, adjB: 0 };
+    }
 
     // 시작 순서: 섞기 옵션이 켜져 있으면 무작위
     if (cfg.shuffle) {
@@ -2575,7 +2864,8 @@ var App = (function () {
       totalHoles: cfg.totalHoles,
       createdAt: Date.now(),
       finishedAt: null,
-      initialPlayers: players,
+      initialPlayers: players.map(function (p) { return { uid: p.uid, name: p.name }; }),
+      teamPlay: teamPlayRound,
       sideConfig: sideConfig,
       history: [],
       draft: null,
@@ -2592,7 +2882,8 @@ var App = (function () {
       count: cfg.count,
       totalHoles: cfg.totalHoles,
       names: names,
-      shuffle: cfg.shuffle
+      shuffle: cfg.shuffle,
+      teamPlay: cfg.teamPlay
     });
 
     R = recompute();
@@ -2619,6 +2910,7 @@ var App = (function () {
         uids: uids.slice(),
         scores: scores,
         doubleBy: d.doubleBy || null,
+        teamOverride: d.teamOverride && d.teamOverride !== 'auto' ? d.teamOverride : null,
         sides: {}
       }
     };
@@ -2745,7 +3037,7 @@ var App = (function () {
   function editLast() {
     if (!S.round || !S.round.history.length) { toast('수정할 홀이 없습니다'); return; }
     var last = S.round.history[S.round.history.length - 1];
-    var d = { hole: last.hole, scores: {}, sides: {}, doubleBy: last.doubleBy || null };
+    var d = { hole: last.hole, scores: {}, sides: {}, doubleBy: last.doubleBy || null, teamOverride: last.teamOverride || 'auto' };
     last.uids.forEach(function (u, i) {
       d.scores[u] = last.scores[i];
       ['nearest', 'longest'].forEach(function (t) {
@@ -3128,6 +3420,14 @@ var App = (function () {
         S.setup.baseBet = Number(el.getAttribute('data-v'));
         render();
         return;
+      case 'setup:team-pick': {
+        var tidx = Number(el.getAttribute('data-idx'));
+        var tval = el.getAttribute('data-team') === 'B' ? 'B' : 'A';
+        if (!S.setup.teamPlay) S.setup.teamPlay = { enabled: true, teams: ['A', 'A', 'B', 'B'] };
+        S.setup.teamPlay.teams[tidx] = tval;
+        render();
+        return;
+      }
       case 'setup:start':
         startRound();
         return;
@@ -3190,6 +3490,44 @@ var App = (function () {
         d5.doubleBy = d5.doubleBy === uid ? null : uid;
         save();
         render();
+        return;
+      }
+      case 'play:team': {
+        var pv5 = preView();
+        var d6 = draftOf(pv5);
+        d6.teamOverride = el.getAttribute('data-v') || 'auto';
+        save();
+        render();
+        return;
+      }
+      case 'play:team-adj': {
+        var pv6 = preView();
+        if (!pv6.teamMatch || !S.round.teamPlay) return;
+        var tmAdj = pv6.teamMatch;
+        var nmA = tmAdj.teamA.map(nameOf).join('·');
+        var nmB = tmAdj.teamB.map(nameOf).join('·');
+        showModal({
+          title: '팀 점수 조정',
+          body: '<div class="small" style="line-height:1.6">' +
+            '현재 점수: <b>A팀(' + esc(nmA) + ') ' + tmAdj.scoreA + '</b> : <b>' + tmAdj.scoreB + ' B팀(' + esc(nmB) + ')</b><br>' +
+            '<span class="tiny muted">조정할 항목을 누르면 즉시 반영됩니다.</span></div>' +
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">' +
+              '<button class="btn btn-ghost" data-modal="a+1">A팀 +1점</button>' +
+              '<button class="btn btn-ghost" data-modal="b+1">B팀 +1점</button>' +
+              '<button class="btn btn-ghost" data-modal="a-1">A팀 −1점</button>' +
+              '<button class="btn btn-ghost" data-modal="b-1">B팀 −1점</button>' +
+            '</div>',
+          buttons: [{ label: '닫기', value: 'close', kind: 'primary' }]
+        }).then(function (val) {
+          if (!val || val === 'close') return;
+          if (val === 'a+1') S.round.teamPlay.adjA = (S.round.teamPlay.adjA || 0) + 1;
+          else if (val === 'a-1') S.round.teamPlay.adjA = (S.round.teamPlay.adjA || 0) - 1;
+          else if (val === 'b+1') S.round.teamPlay.adjB = (S.round.teamPlay.adjB || 0) + 1;
+          else if (val === 'b-1') S.round.teamPlay.adjB = (S.round.teamPlay.adjB || 0) - 1;
+          R = recompute();
+          save();
+          render();
+        });
         return;
       }
       case 'play:finish':
@@ -3291,6 +3629,12 @@ var App = (function () {
       return;
     }
     if (act === 'setup:shuffle') { cfg.shuffle = el.checked; return; }
+    if (act === 'setup:team-toggle') {
+      if (!cfg.teamPlay) cfg.teamPlay = { enabled: false, teams: ['A', 'A', 'B', 'B'] };
+      cfg.teamPlay.enabled = el.checked;
+      render();
+      return;
+    }
     if (act === 'setup:side') {
       var t = el.getAttribute('data-type');
       cfg.side[t].enabled = el.checked;
