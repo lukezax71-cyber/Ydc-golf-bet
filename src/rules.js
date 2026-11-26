@@ -562,8 +562,11 @@ var YDC = (function () {
 
           var sMap = {};
           h.uids.forEach(function (u, idx) { sMap[u] = h.scores[idx]; });
-          var sumA = (sMap[teamA[0]] || 0) + (sMap[teamA[1]] || 0);
-          var sumB = (sMap[teamB[0]] || 0) + (sMap[teamB[1]] || 0);
+          var a1 = sMap[teamA[0]] || 0, a2 = sMap[teamA[1]] || 0;
+          var b1 = sMap[teamB[0]] || 0, b2 = sMap[teamB[1]] || 0;
+          var isOdd = (h.hole % 2 === 1);
+          var sumA = isOdd ? Math.min(a1, a2) : (a1 + a2);
+          var sumB = isOdd ? Math.min(b1, b2) : (b1 + b2);
           var hWinner = sumA < sumB ? 'A' : sumB < sumA ? 'B' : null;
           var manualTeam = false;
           if (h.teamOverride === 'A') { hWinner = 'A'; manualTeam = true; }
@@ -582,6 +585,7 @@ var YDC = (function () {
           }
 
           h.teamResult = {
+            ruleType: isOdd ? 'best' : 'sum',
             sumA: sumA,
             sumB: sumB,
             pts: ptsNow,
@@ -637,6 +641,7 @@ var YDC = (function () {
           clinchedEarly: clinchedEarly,
           clinchedAtHole: clinchedAtHole,
           nextPts: curPts,
+          nextRuleType: (curHole % 2 === 1) ? 'best' : 'sum',
           nextIsDormie: nextIsDormie,
           dormieLeader: nextIsDormie ? leaderCur : null,
           dormieTrailing: nextIsDormie ? (leaderCur === 'A' ? 'B' : 'A') : null,

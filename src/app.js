@@ -351,7 +351,7 @@ var App = (function () {
       teamTop = '<div class="card tight" style="margin-bottom:10px">' +
         '<div class="switch-row">' +
           '<div><div class="bold" style="font-size:.95rem">2:2 팀플레이</div>' +
-          '<div class="tiny muted">전반 1점 · 10~17홀 2점 · 18홀 4점 · 도미 홀 표기</div></div>' +
+          '<div class="tiny muted">전반 1 · 10~17홀 2 · 18홀 4점 · 홀수 베스트볼 / 짝수 합산</div></div>' +
           '<label class="switch"><input type="checkbox" data-act="setup:team-toggle"' + (tpOn ? ' checked' : '') + '><span></span></label>' +
         '</div>' +
         (tpOn ? '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px">' +
@@ -594,9 +594,10 @@ var App = (function () {
         dormieHtml = '<div class="note warn mt" style="font-weight:800">' +
           '⚠️ 도미 홀 · ' + esc(trT) + '(' + esc(trN) + ')이 이 홀을 못 이기면 경기 조기 종료!</div>';
       }
+      var ruleLabel = tm.nextRuleType === 'best' ? '베스트볼' : '합산';
       teamBanner = '<div class="card tight mt">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
-          '<div class="small bold">팀플레이 · 이번 홀 ' + tm.nextPts + '점' +
+          '<div class="small bold">팀플레이 · ' + tm.nextPts + '점 (' + ruleLabel + ')' +
             (tm.nextIsDormie ? ' <span class="tag" style="background:var(--gold);color:#111">도미 홀</span>' : '') + '</div>' +
           '<div style="display:flex;align-items:center;gap:8px">' +
             '<div class="small bold">' + esc(tA) + '(' + esc(namesA) + ') ' + tm.scoreA + ' : ' + tm.scoreB + ' ' + esc(tB) + '(' + esc(namesB) + ')</div>' +
@@ -732,10 +733,11 @@ var App = (function () {
         alertLine = '<div class="note warn mt" style="font-weight:800">' +
           '⚠️ 다음 ' + (h.hole + 1) + '번 홀은 도미 홀입니다 (' + esc(dtt) + ' ' + esc(dt) + ' 패/무 시 조기 종료)</div>';
       }
+      var rWord = tr.ruleType === 'best' ? '최저' : '합';
       teamResCard = '<div class="card">' +
-        '<div class="bold" style="margin-bottom:6px">팀플레이 (' + tr.pts + '점 홀' + (tr.wasDormie ? ' · 도미 홀' : '') + ')</div>' +
-        '<div class="small">' + esc(tA2) + '(' + esc(nA) + ') 합 ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) +
-          ' vs ' + esc(tB2) + '(' + esc(nB) + ') 합 ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' → ' + resLine + '</div>' +
+        '<div class="bold" style="margin-bottom:6px">팀플레이 (' + tr.pts + '점 · ' + (tr.ruleType === 'best' ? '베스트볼' : '합산') + (tr.wasDormie ? ' · 도미 홀' : '') + ')</div>' +
+        '<div class="small">' + esc(tA2) + '(' + esc(nA) + ') ' + rWord + ' ' + (tr.sumA > 0 ? '+' + tr.sumA : tr.sumA) +
+          ' vs ' + esc(tB2) + '(' + esc(nB) + ') ' + rWord + ' ' + (tr.sumB > 0 ? '+' + tr.sumB : tr.sumB) + ' → ' + resLine + '</div>' +
         '<div class="small muted mt">누적 점수: <b>' + esc(tA2) + ' ' + tr.scoreA + '</b> : <b>' + tr.scoreB + ' ' + esc(tB2) + '</b></div>' +
         alertLine +
       '</div>';

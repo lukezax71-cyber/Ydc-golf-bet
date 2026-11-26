@@ -360,9 +360,9 @@ r21 = build(holes=18)
 r21['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'adjA': 0, 'adjB': 0}
 # 1~9홀: A팀 승 (각 1점 -> 9:0), 10~13홀: B팀 승 (각 2점 -> 9:8)
 for h in range(1, 10):
-    add_hole(r21, h, [0, 0, 1, 0])
+    add_hole(r21, h, [0, 0, 1, 1])
 for h in range(10, 14):
-    add_hole(r21, h, [1, 0, 0, 0])
+    add_hole(r21, h, [1, 1, 0, 0])
 v21 = view(r21)
 check('팀플레이 13홀 후 A 9점', v21['teamMatch']['scoreA'], 9)
 check('팀플레이 13홀 후 B 8점', v21['teamMatch']['scoreB'], 8)
@@ -370,7 +370,7 @@ check('14홀 도미 아님', v21['teamMatch']['nextIsDormie'], False)
 
 # 14~16홀: A팀 승 (각 2점 -> 15:8, 7점 차). 17홀(2점) + 18홀(4점) = 6점 < 7점 -> 16홀 후 조기 종료 확정!
 for h in range(14, 17):
-    add_hole(r21, h, [0, 0, 1, 0])
+    add_hole(r21, h, [0, 0, 1, 1])
 v21b = view(r21)
 check('팀플레이 16홀 후 A 15점', v21b['teamMatch']['scoreA'], 15)
 check('팀플레이 조기 종료 A팀 확정', v21b['teamMatch']['clinchedEarly'], 'A')
@@ -380,18 +380,18 @@ check('팀플레이 최종 우승 A팀', v21b['teamMatch']['finalWinner'], 'A')
 r22 = build(holes=18)
 r22['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'adjA': 0, 'adjB': 0}
 for h in range(1, 5):
-    add_hole(r22, h, [0, 0, 1, 0])  # A +4
+    add_hole(r22, h, [0, 0, 1, 1])  # A +4
 for h in range(5, 10):
     add_hole(r22, h, [0, 0, 0, 0])  # 무
 for h in range(10, 13):
-    add_hole(r22, h, [0, 0, 1, 0])  # A +6 -> A 10 : B 0
+    add_hole(r22, h, [0, 0, 1, 1])  # A +6 -> A 10 : B 0
 for h in range(13, 16):
-    add_hole(r22, h, [1, 0, 0, 0])  # B +6 -> A 10 : B 6
+    add_hole(r22, h, [1, 1, 0, 0])  # B +6 -> A 10 : B 6
 for h in range(16, 18):
     add_hole(r22, h, [0, 0, 0, 0])  # 무 -> 17홀 후 A 10 : B 6
 v22_pre = view(r22)
 check('17홀 후 4점 차 도미 아님(18홀 4점)', v22_pre['teamMatch']['nextIsDormie'], False)
-add_hole(r22, 18, [1, 0, 0, 0])  # B +4 -> 10:10 동점!
+add_hole(r22, 18, [1, 1, 0, 0])  # B +4 -> 10:10 동점!
 v22 = view(r22)
 check('18홀 후 10:10 동점', (v22['teamMatch']['scoreA'], v22['teamMatch']['scoreB']), (10, 10))
 check('지다가 비긴 B팀 최종 승', v22['teamMatch']['finalWinner'], 'B')
@@ -401,6 +401,18 @@ r22['teamPlay']['adjA'] = 1
 v22_adj = view(r22)
 check('팀 점수 수동 조정 A +1 -> 11점', v22_adj['teamMatch']['scoreA'], 11)
 check('조정 후 A팀 최종 승', v22_adj['teamMatch']['finalWinner'], 'A')
+
+# 홀수홀 베스트볼 vs 짝수홀 합산
+r23 = build(holes=18)
+r23['teamPlay'] = {'enabled': True, 'teamOf': {'u0': 'A', 'u1': 'A', 'u2': 'B', 'u3': 'B'}, 'nameA': '제우스', 'nameB': '아폴론', 'adjA': 0, 'adjB': 0}
+add_hole(r23, 1, [-1, 3, 0, 0])  # 홀수(1홀) 베스트볼: A min=-1 vs B min=0 -> A 승 (+1)
+add_hole(r23, 2, [-1, 3, 0, 0])  # 짝수(2홀) 합산: A sum=+2 vs B sum=0 -> B 승 (+1)
+v23 = view(r23)
+check('1홀 베스트볼 제우스 승', v23['holes'][0]['teamResult']['winner'], 'A')
+check('1홀 ruleType=best', v23['holes'][0]['teamResult']['ruleType'], 'best')
+check('2홀 합산 아폴론 승', v23['holes'][1]['teamResult']['winner'], 'B')
+check('2홀 ruleType=sum', v23['holes'][1]['teamResult']['ruleType'], 'sum')
+check('2홀 후 1:1 동점', (v23['teamMatch']['scoreA'], v23['teamMatch']['scoreB']), (1, 1))
 
 # ---------------------------------------------------------------- 결과
 print('통과 %d / 실패 %d' % (len(PASS), len(FAIL)))
