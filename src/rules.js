@@ -314,6 +314,8 @@ var YDC = (function () {
       teamPlay = {
         enabled: true,
         teamOf: r.teamPlay.teamOf,
+        nameA: String(r.teamPlay.nameA || '제우스').slice(0, 12),
+        nameB: String(r.teamPlay.nameB || '아폴론').slice(0, 12),
         adjA: Math.round(num(r.teamPlay.adjA)),
         adjB: Math.round(num(r.teamPlay.adjB))
       };
@@ -626,6 +628,8 @@ var YDC = (function () {
           teamA: teamA,
           teamB: teamB,
           teamOf: teamOf,
+          nameA: r.teamPlay.nameA || '제우스',
+          nameB: r.teamPlay.nameB || '아폴론',
           adjA: adjA,
           adjB: adjB,
           scoreA: scoreA,
@@ -756,10 +760,11 @@ var YDC = (function () {
       var namesB = tm.teamB.map(function (u) { return nameOf[u]; }).join('·');
       lines.push('');
       lines.push('■ 팀플레이 (2:2)');
-      lines.push('A팀(' + namesA + ') ' + tm.scoreA + '점 vs ' + tm.scoreB + '점 B팀(' + namesB + ')');
+      lines.push(tm.nameA + '(' + namesA + ') ' + tm.scoreA + '점 vs ' + tm.scoreB + '점 ' + tm.nameB + '(' + namesB + ')');
       if (tm.finalWinner) {
+        var winTeamName = tm.finalWinner === 'A' ? tm.nameA : tm.nameB;
         var winNames = tm.finalWinner === 'A' ? namesA : namesB;
-        lines.push('우승: ' + tm.finalWinner + '팀(' + winNames + ') · ' + tm.winReason);
+        lines.push('우승: ' + winTeamName + '(' + winNames + ') · ' + tm.winReason);
       } else {
         lines.push('결과: 무승부');
       }

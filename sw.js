@@ -2,7 +2,7 @@
  * 앱 전체를 미리 받아 두고, 평소에는 캐시에서 즉시 응답한다(필드에서 신호 없어도 실행).
  * 화면(index)은 캐시를 먼저 주고 뒤에서 최신본을 받아 다음 실행 때 반영한다.
  */
-const CACHE = 'ydc-golf-bet-v4';
+const CACHE = 'ydc-golf-bet-v5';
 const ASSETS = [
   './',
   './index.html',
